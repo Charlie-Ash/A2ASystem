@@ -15,7 +15,7 @@ def main():
         if input_text.lower() == "bye":
             break
 
-        orchestrator.run_orchestrator(input_text)
+        print(orchestrator.run_orchestrator(input_text))
 
 if __name__ == "__main__":
     main()

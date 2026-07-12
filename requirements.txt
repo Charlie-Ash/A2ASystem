@@ -1,4 +1,5 @@
 vllm
+pydantic
 llama-index
 llama-index-embeddings-huggingface
 qdrant-client

@@ -1,31 +1,27 @@
 # Ochestrator class's main logic
 # 1. Route to correct tools according to the prompt
 
-from vllm import LLM
-import json
-
 from orchestrator.tool_router import ToolRouter
 from orchestrator.llm import OrchestratorLLM
 
 class Orchestrator():
 
     def __init__(self):
-        
+
         self.tool_route = ToolRouter()
         self.llm = OrchestratorLLM()
 
     def run_orchestrator(self, user_message):
 
-        # Ask LLM what tool should be used. A structured JSON structure is returned
-        decision_json_struct = self.llm.tool_decision(user_message)
-        
-        # Extracting tool name from returned JSON structure
-        tool_name = decision_json_struct["tool"]
-        tool_args = decision_json_struct["args"]
+        # Ask LLM what tool should be used. A validated ToolCall is returned
+        tool_call = self.llm.tool_decision(user_message)
 
-        print("LLM tool decision: ", tool_name)
-        print("LLM tool argument: ", tool_args)
+        print("LLM tool decision: ", tool_call.tool)
+        print("LLM tool argument: ", tool_call.args)
 
         # Execute tool
-        result = self.tool_route.execute_tool(tool_name, tool_args)
-        return result
+        result = self.tool_route.execute_tool(tool_call)
+
+        # Ask LLM to turn the tool result into a natural-language reply
+        final_response = self.llm.generate_response(user_message, tool_call, result)
+        return final_response

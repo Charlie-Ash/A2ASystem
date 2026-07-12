@@ -1,28 +1,13 @@
 # Orchestrator prompt building
 
-def build_orchestrator_prompt(user_message):
+def build_tool_decision_prompt(user_message):
 
+    # JSON shape is now enforced by guided decoding (see schemas/tool_schema.py),
+    # so this prompt only needs to cover tool semantics, not output formatting.
     SYSTEM_PROMPT = f"""
-        You are an orchestrator to a vast agent system. 
+        You are an orchestrator to a vast agent system.
         It is your role to decide on a suitble tool within the agent system to use in the user's work.
         Route tools that are connected to other agents accordingly from the user's message.
-
-        You MUST output ONLY valid JSON.
-        No explanations.
-        No markdown.
-        No extra text.
-
-        -----------------------
-        TOOL SCHEMA (STRICT)
-        -----------------------
-
-        Return exactly:
-
-        {{
-            "tool": "rag | note | default",
-            "action": "run",
-            "args": {{}}
-        }}
 
         -----------------------
         TOOLS AVAILABLE
@@ -43,17 +28,6 @@ def build_orchestrator_prompt(user_message):
         args: {{
             "content": string
         }}
-
-        -----------------------
-        RULES
-        -----------------------
-
-        - Output MUST be valid JSON
-        - No extra keys
-        - No comments
-        - No markdown
-        - No trailing commas
-        - Always include "tool", "action", "args"
 
         -----------------------
         EXAMPLES
@@ -89,6 +63,33 @@ def build_orchestrator_prompt(user_message):
     """
 
     # Have the system prompt and user message split, avoiding using a single, excessivly long prompt that may cause unexpected behaviors
+    messages = [
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT,
+        },
+        {
+            "role": "user",
+            "content": user_message,
+        }
+    ]
+
+    return messages
+
+def build_response_prompt(user_message, tool_call, tool_result):
+
+    # Second-stage prompt: no JSON constraints here, just a plain-text reply
+    SYSTEM_PROMPT = f"""
+        You are the same orchestrator agent, now replying to the user directly.
+        You already routed the user's message to the "{tool_call.tool}" tool and it has produced a result.
+
+        Using the tool result below, write a concise, helpful reply to the user.
+        Do not mention tool names, JSON, or internal routing details.
+
+        Tool result:
+        {tool_result}
+    """
+
     messages = [
         {
             "role": "system",
