@@ -78,7 +78,7 @@ def build_tool_decision_prompt(user_message):
 
 def build_response_prompt(user_message, tool_call, tool_result):
 
-    # Second-stage prompt: no JSON constraints here, just a plain-text reply
+    # Second-stage prompt: Plain-text reply
     SYSTEM_PROMPT = f"""
         You are the same orchestrator agent, now replying to the user directly.
         You already routed the user's message to the "{tool_call.tool}" tool and it has produced a result.

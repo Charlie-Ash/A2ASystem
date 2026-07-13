@@ -31,6 +31,7 @@ class OrchestratorLLM():
             repetition_penalty = 1.1  # Penalty to apply if tokens continue repeating.
         )
 
+    # Phase 1 Orchestrotor LLM usage: Tool decision
     def tool_decision(self, user_message) -> ToolCall:
 
         unformatted_prompt = build_tool_decision_prompt(user_message)
@@ -55,6 +56,7 @@ class OrchestratorLLM():
         # Guided decoding guarantees schema-conformant JSON, so parsing/validation collapses into this one call
         return ToolCall.model_validate_json(raw_text)
 
+    # Phase 2 Orchestrotor LLM usage: Response Generation
     def generate_response(self, user_message, tool_call: ToolCall, tool_result) -> str:
 
         # Stub tools currently return None, so give the prompt something readable
