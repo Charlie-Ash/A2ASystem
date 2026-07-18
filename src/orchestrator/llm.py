@@ -11,7 +11,7 @@ class OrchestratorLLM():
     def __init__(self):
 
         self.llm = LLM(
-            model="google/gemma-4-E4B",  # Gemma 4 E4B as the LLM brain of the orchestrator
+            model="google/gemma-4-E4B-it",  # Gemma 4 E4B as the LLM brain of the orchestrator
             gpu_memory_utilization=0.8,  # reserve up to 80% of available VRAM for the KV cache and runtime buffers (tweak this if memory runs out when running)
             max_model_len=4096  # sets the maximum context window that vLLM will allocate KV cache for
         )  # Use this to install gemma4:26B quantized via Huggingface
