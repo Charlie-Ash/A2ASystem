@@ -8,7 +8,7 @@ class Orchestrator():
 
     def __init__(self):
 
-        self.tool_route = ToolRouter()
+        self.tool_router = ToolRouter()
         self.llm = OrchestratorLLM()
 
     def run_orchestrator(self, user_message):
@@ -20,7 +20,7 @@ class Orchestrator():
         print("LLM tool argument: ", tool_call.args)
 
         # Execute tool
-        result = self.tool_route.execute_tool(tool_call)
+        result = self.tool_router.execute_tool(tool_call)
 
         # Ask LLM to turn the tool result into a natural-language reply
         final_response = self.llm.generate_response(user_message, tool_call, result)

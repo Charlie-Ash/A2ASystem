@@ -3,8 +3,8 @@ class DefaultTool():
     
     def __init__(self):
 
-        print("Deafault tool initialized.")
+        print("Default tool initialized.")
 
     def run(self, tool_args):
 
-        print("Tool running...")
+        print("Default tool running...")

@@ -2,7 +2,8 @@
 
 def build_tool_decision_prompt(user_message):
 
-    # JSON shape is now enforced by guided decoding (see schemas/tool_schema.py),
+    # First stage prompt: Tool Route
+    # JSON shape enforced by guided decoding (see schemas/tool_schema.py),
     # so this prompt only needs to cover tool semantics, not output formatting.
     SYSTEM_PROMPT = f"""
         You are an orchestrator to a vast agent system.
