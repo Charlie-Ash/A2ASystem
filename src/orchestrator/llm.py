@@ -13,8 +13,11 @@ class OrchestratorLLM():
 
         # RAG tool's vLLM engine loads on the same GPU (see tools/ragTool/config.py),
         # so this fraction must leave room for that model too instead of assuming
-        # the whole device is available.
-        gpu_memory_utilization = float(os.environ.get("ORCHESTRATOR_GPU_MEMORY_UTILIZATION", "0.45"))
+        # the whole device is available. gemma-4-E4B-it's own weights alone take
+        # ~15.28 GiB (measured via vLLM's model-loading log), so this fraction must
+        # clear that bar before any KV cache/overhead is even considered -- on a
+        # 32 GiB card, 0.6 gives ~19.2 GiB (weights + ~4 GiB headroom).
+        gpu_memory_utilization = float(os.environ.get("ORCHESTRATOR_GPU_MEMORY_UTILIZATION", "0.6"))
 
         self.llm = LLM(
             model="google/gemma-4-E4B-it",  # Gemma 4 E4B as the LLM brain of the orchestrator
