@@ -1,7 +1,7 @@
 # Class that routes to the correct tool
-from tools.default_tool import DefaultTool
-from tools.rag_tool import RAGTool
-from tools.notes_tool import NotesTool
+from tools.defaultTool.tool_class import DefaultTool
+from tools.ragTool.tool_class import RAGTool
+from tools.notesTool.tool_class import NotesTool
 from schemas.tool_call import ToolCall
 
 class ToolRouter():
