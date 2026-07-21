@@ -19,6 +19,10 @@ class Orchestrator():
         print("LLM tool decision: ", tool_call.tool)
         print("LLM tool argument: ", tool_call.args)
 
+        # Condition for RAG tool: Guarantees the tool to receive the user's exact question
+        if tool_call.tool == "rag":
+            tool_call.args["query"] = user_message
+
         # Execute tool
         result = self.tool_router.execute_tool(tool_call)
 

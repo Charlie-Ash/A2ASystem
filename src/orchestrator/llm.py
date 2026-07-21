@@ -1,4 +1,5 @@
 # Interacts first-hand with the language model
+import os
 from vllm import LLM, SamplingParams
 from vllm.sampling_params import StructuredOutputsParams
 from orchestrator.prompts import build_tool_decision_prompt, build_response_prompt
@@ -10,9 +11,14 @@ class OrchestratorLLM():
     # Initialization settings currently set to that of VLLM_RAG
     def __init__(self):
 
+        # RAG tool's vLLM engine loads on the same GPU (see tools/ragTool/config.py),
+        # so this fraction must leave room for that model too instead of assuming
+        # the whole device is available.
+        gpu_memory_utilization = float(os.environ.get("ORCHESTRATOR_GPU_MEMORY_UTILIZATION", "0.45"))
+
         self.llm = LLM(
             model="google/gemma-4-E4B-it",  # Gemma 4 E4B as the LLM brain of the orchestrator
-            gpu_memory_utilization=0.8,  # reserve up to 80% of available VRAM for the KV cache and runtime buffers (tweak this if memory runs out when running)
+            gpu_memory_utilization=gpu_memory_utilization,  # reserve this fraction of VRAM for the KV cache and runtime buffers (tweak via ORCHESTRATOR_GPU_MEMORY_UTILIZATION if memory runs out when running)
             max_model_len=4096  # sets the maximum context window that vLLM will allocate KV cache for
         )  # Use this to install gemma4:26B quantized via Huggingface
 

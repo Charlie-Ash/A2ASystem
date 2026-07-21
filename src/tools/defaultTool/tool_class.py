@@ -9,4 +9,4 @@ class DefaultTool():
     def run(self, tool_args):
 
         print("Default tool running...")
-        return "Default tool has completed"
+        return "Default tool has completed."
