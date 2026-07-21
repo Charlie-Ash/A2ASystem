@@ -2,7 +2,8 @@
 class RAGTool():
 
     def __init__(self):
-        pass
+        
+        print("RAG tool initialized.")
 
     def run(self, tool_args):
         pass

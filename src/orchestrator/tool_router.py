@@ -17,12 +17,11 @@ class ToolRouter():
 
         }
 
+    # This function should return the output (string format) of each tool, back to the orchestrator
     def execute_tool(self, tool_call: ToolCall):
 
         # tool_call.tool is already validated against the 3 registered tools above,
-        # so no "unknown tool" fallback is needed here anymore
         tool = self.tools[tool_call.tool]
 
         # Run each tool with their respective "run()" operation
-        # This function should return the output (string format) of each tool, back to the orchestrator
         return tool.run(tool_call.args)
