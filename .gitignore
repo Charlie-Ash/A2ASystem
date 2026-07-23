@@ -9,3 +9,6 @@ __pycache__/
 
 # RAG tool's local Qdrant vector store
 qdrant_db/
+
+# Notes tool's saved .txt files notes
+data/notes/

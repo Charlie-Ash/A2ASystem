@@ -27,8 +27,13 @@ def build_tool_decision_prompt(user_message):
         3. note
         Use for saving information.
         args: {{
-            "content": string
+            "content": string,
+            "file_name": string
         }}
+
+        ("file_name" is a short, filesystem-safe title for the note (lowercase,
+        words separated by underscores, no extension) -- the note tool appends
+        "_notes.txt" itself.)
 
         -----------------------
         EXAMPLES
@@ -50,7 +55,8 @@ def build_tool_decision_prompt(user_message):
             "tool": "note",
             "action": "run",
             "args": {{
-                "content": "Pete likes astronomy"
+                "content": "Pete likes astronomy",
+                "file_name": "pete_astronomy"
                 }}
         }}
 

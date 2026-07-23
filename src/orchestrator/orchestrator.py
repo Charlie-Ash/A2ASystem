@@ -23,6 +23,13 @@ class Orchestrator():
         if tool_call.tool == "rag":
             tool_call.args["query"] = user_message
 
+        # Condition for note tool: "content" is normally LLM-authored (either the
+        # user's own words verbatim or text the orchestrator decided to note down),
+        # but args is an unvalidated dict, so guard against an empty/missing value
+        # by falling back to the raw user message rather than saving a blank note.
+        if tool_call.tool == "note" and not tool_call.args.get("content"):
+            tool_call.args["content"] = user_message
+
         # Execute tool
         result = self.tool_router.execute_tool(tool_call)
 
