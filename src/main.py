@@ -12,6 +12,7 @@ def main():
     while True:
 
         input_text = input(">>> ")
+        
         if input_text.lower() == "bye":
 
             # Loop until the user gives a valid y/n answer, rather than
@@ -20,13 +21,17 @@ def main():
                 choice = input("Save this chat's memory? (y/n): ").strip().lower()
 
                 if choice == "y":
+
                     saved_path = orchestrator.end_session(save=True)
                     print(f"Chat memory saved to {saved_path}.")
                     break
+
                 elif choice == "n":
+
                     orchestrator.end_session(save=False)
                     print("Chat memory discarded.")
                     break
+
                 else:
                     print("Invalid input. Please enter 'y' or 'n'.")
 
