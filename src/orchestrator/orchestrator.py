@@ -1,8 +1,12 @@
 # Ochestrator class's main logic
 # 1. Route to correct tools according to the prompt
 
+from pathlib import Path
+from typing import Optional
+
 from orchestrator.tool_router import ToolRouter
 from orchestrator.llm import OrchestratorLLM
+from orchestrator import memory_manager
 
 class Orchestrator():
 
@@ -10,6 +14,9 @@ class Orchestrator():
 
         self.tool_router = ToolRouter()
         self.llm = OrchestratorLLM()
+
+        # Fresh per-session memory file, reset on every boot (see memory_manager).
+        memory_manager.init_system_memory()
 
     def run_orchestrator(self, user_message):
 
@@ -23,9 +30,9 @@ class Orchestrator():
         if tool_call.tool == "rag":
             tool_call.args["query"] = user_message
 
-        # Condition for note tool: "content" is normally LLM-authored (either the
+        # Safe guarde condition for note tool: "content" is normally LLM-authored (either the
         # user's own words verbatim or text the orchestrator decided to note down),
-        # but args is an unvalidated dict, so guard against an empty/missing value
+        # but args is an unvalidated dict, so the safe guard below against an empty/missing value
         # by falling back to the raw user message rather than saving a blank note.
         if tool_call.tool == "note" and not tool_call.args.get("content"):
             tool_call.args["content"] = user_message
@@ -35,4 +42,17 @@ class Orchestrator():
 
         # Ask LLM to turn the tool result into a natural-language reply
         final_response = self.llm.generate_response(user_message, tool_call, result)
+
+        # Update system_memory.MD
+        self.llm.orchestrator_mem_update(user_message, tool_call, result, final_response)
+
         return final_response
+
+    # Called from main.py's "bye" flow once the user has answered the save prompt.
+    def end_session(self, save: bool) -> Optional[Path]:
+
+        if save:
+            slug = self.llm.decide_chat_memory_filename()
+            return memory_manager.finalize_and_save(keep=True, new_name=slug)
+
+        return memory_manager.finalize_and_save(keep=False)

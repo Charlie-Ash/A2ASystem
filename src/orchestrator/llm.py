@@ -2,7 +2,13 @@
 import os
 from vllm import LLM, SamplingParams
 from vllm.sampling_params import StructuredOutputsParams
-from orchestrator.prompts import build_tool_decision_prompt, build_response_prompt
+from orchestrator.prompts import (
+    build_tool_decision_prompt,
+    build_response_prompt,
+    build_mem_update_prompt,
+    build_filename_prompt,
+)
+from orchestrator import memory_manager
 from schemas.tool_call import ToolCall
 from schemas.tool_schema import TOOL_SCHEMA
 
@@ -40,10 +46,25 @@ class OrchestratorLLM():
             repetition_penalty = 1.1  # Penalty to apply if tokens continue repeating.
         )
 
+        self.mem_update_sampling_params = SamplingParams(
+            temperature=0.2,  # low randomness; this stage writes a short factual summary
+            top_p=0.9,  # top_p; nucleus sampling
+            max_tokens=180,  # memory notes are meant to stay short
+            repetition_penalty=1.1  # Penalty to apply if tokens continue repeating.
+        )
+
+        self.filename_sampling_params = SamplingParams(
+            temperature=0.0,  # deterministic; this stage outputs a short filename slug
+            top_p=1.0,  # top_p; nucleus sampling
+            max_tokens=24,  # a 2-5 word slug needs very few tokens
+            repetition_penalty=1.1  # Penalty to apply if tokens continue repeating.
+        )
+
     # Phase 1 Orchestrotor LLM usage: Tool decision
     def tool_decision(self, user_message) -> ToolCall:
 
-        unformatted_prompt = build_tool_decision_prompt(user_message)
+        memory_context = memory_manager.read_system_memory()
+        unformatted_prompt = build_tool_decision_prompt(user_message, memory_context)
 
         # Use tokenizers to format "prompt"
         tokenizer = self.llm.get_tokenizer()
@@ -71,7 +92,8 @@ class OrchestratorLLM():
         # Stub tools currently return None, so give the prompt something readable
         result_text = str(tool_result) if tool_result is not None else "(no output)"
 
-        unformatted_prompt = build_response_prompt(user_message, tool_call, result_text)
+        memory_context = memory_manager.read_system_memory()
+        unformatted_prompt = build_response_prompt(user_message, tool_call, result_text, memory_context)
 
         tokenizer = self.llm.get_tokenizer()
 
@@ -86,3 +108,51 @@ class OrchestratorLLM():
         output = self.llm.generate([formatted_prompt], self.response_sampling_params)
 
         return output[0].outputs[0].text.strip()
+
+    # Phase 3 Orchestrotor LLM usage: Conversation memory update
+    def orchestrator_mem_update(self, user_message, tool_call: ToolCall, tool_result, final_response) -> None:
+
+        try:
+            question_number = memory_manager.count_existing_entries() + 1
+
+            unformatted_prompt = build_mem_update_prompt(user_message, tool_call, tool_result, final_response)
+
+            tokenizer = self.llm.get_tokenizer()
+            formatted_prompt = tokenizer.apply_chat_template(
+                unformatted_prompt,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+
+            output = self.llm.generate([formatted_prompt], self.mem_update_sampling_params)
+            note_text = output[0].outputs[0].text.strip() or "(no memory note generated for this turn)"
+
+            memory_manager.append_entry(question_number, note_text)
+
+        except Exception as e:
+            # A memory-write hiccup should never take down an otherwise-successful turn.
+            print(f"Warning: failed to update conversation memory ({e}).")
+
+    # Phase 4 Orchestrotor LLM usage: Chat memory filename decision (used only at "bye" + "y")
+    def decide_chat_memory_filename(self) -> str:
+
+        memory_content = memory_manager.read_system_memory(max_entries=None)
+
+        try:
+            unformatted_prompt = build_filename_prompt(memory_content)
+
+            tokenizer = self.llm.get_tokenizer()
+            formatted_prompt = tokenizer.apply_chat_template(
+                unformatted_prompt,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+
+            output = self.llm.generate([formatted_prompt], self.filename_sampling_params)
+            return output[0].outputs[0].text.strip()
+
+        except Exception as e:
+            # memory_manager's own sanitizer falls back to a timestamp-based name
+            # for an empty slug, so failing here still results in a saved file.
+            print(f"Warning: failed to generate a memory filename ({e}); using a default name.")
+            return ""
