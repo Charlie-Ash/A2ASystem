@@ -7,12 +7,15 @@ class NotesTool():
     def __init__(self):
         print("Notes tool initialized.")
 
-    # The run() function of each tool returns a string, passed to the orchestrator to use to provide and answer.
+    # Every tool's run() returns a ToolResult (see tools/base.py), passed to
+    # the orchestrator to use to provide an answer. Note-saving is a status
+    # action, not a user-facing answer, so relay_verbatim is always False here
+    # -- the response-generation step composes a normal reply around it.
     def run(self, tool_args):
 
         content = tool_args.get("content", "")
         if not content:
-            return "Notes tool error: no content was provided."
+            return {"output": "Notes tool error: no content was provided.", "relay_verbatim": False}
 
         # file_name is LLM-authored and optional; save_note() sanitizes it and
         # falls back to a timestamp-based name if it's missing or unusable.
@@ -21,6 +24,6 @@ class NotesTool():
         try:
             saved_path = save_note(content, file_name)
         except Exception as e:
-            return f"Notes tool error: failed to save note ({e})"
+            return {"output": f"Notes tool error: failed to save note ({e})", "relay_verbatim": False}
 
-        return f"[Notes tool completed] Note saved to {saved_path}."
+        return {"output": f"Note saved to {saved_path}.", "relay_verbatim": False}

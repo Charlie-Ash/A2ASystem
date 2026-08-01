@@ -89,11 +89,10 @@ class OrchestratorLLM():
     # Phase 2 Orchestrotor LLM usage: Response Generation
     def generate_response(self, user_message, tool_call: ToolCall, tool_result) -> str:
 
-        # Stub tools currently return None, so give the prompt something readable
-        result_text = str(tool_result) if tool_result is not None else "(no output)"
-
+        # tool_result is a ToolResult (see tools/base.py); every tool always
+        # returns one, so no None-handling is needed here anymore.
         memory_context = memory_manager.read_system_memory()
-        unformatted_prompt = build_response_prompt(user_message, tool_call, result_text, memory_context)
+        unformatted_prompt = build_response_prompt(user_message, tool_call, tool_result, memory_context)
 
         tokenizer = self.llm.get_tokenizer()
 

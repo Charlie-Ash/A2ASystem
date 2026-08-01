@@ -7,6 +7,7 @@ from typing import Optional
 from orchestrator.tool_router import ToolRouter
 from orchestrator.llm import OrchestratorLLM
 from orchestrator import memory_manager
+from orchestrator.graph import build_graph
 
 class Orchestrator():
 
@@ -18,35 +19,21 @@ class Orchestrator():
         # Fresh per-session memory file, reset on every boot (see memory_manager).
         memory_manager.init_system_memory()
 
+        # The turn sequence (decide tool -> run tool -> generate reply ->
+        # update memory) now lives in graph.py as a LangGraph StateGraph
+        # instead of being written out inline here.
+        self.graph = build_graph(self.llm, self.tool_router)
+
+    # Runs one full turn through the graph built above and returns the final
+    # reply text. Everything this used to do step-by-step -- tool decision,
+    # tool execution, response generation, memory update -- now happens
+    # inside the graph's nodes (see graph.py); this method just supplies the
+    # user's message as the graph's starting state and reads the result back
+    # out once the graph reaches END.
     def run_orchestrator(self, user_message):
 
-        # Ask LLM what tool should be used. A validated ToolCall is returned
-        tool_call = self.llm.tool_decision(user_message)
-
-        print("LLM tool decision: ", tool_call.tool)
-        print("LLM tool argument: ", tool_call.args)
-
-        # Condition for RAG tool: Guarantees the tool to receive the user's exact question
-        if tool_call.tool == "rag":
-            tool_call.args["query"] = user_message
-
-        # Safe guarde condition for note tool: "content" is normally LLM-authored (either the
-        # user's own words verbatim or text the orchestrator decided to note down),
-        # but args is an unvalidated dict, so the safe guard below against an empty/missing value
-        # by falling back to the raw user message rather than saving a blank note.
-        if tool_call.tool == "note" and not tool_call.args.get("content"):
-            tool_call.args["content"] = user_message
-
-        # Execute tool
-        result = self.tool_router.execute_tool(tool_call)
-
-        # Ask LLM to turn the tool result into a natural-language reply
-        final_response = self.llm.generate_response(user_message, tool_call, result)
-
-        # Update system_memory.MD
-        self.llm.orchestrator_mem_update(user_message, tool_call, result, final_response)
-
-        return final_response
+        result = self.graph.invoke({"user_message": user_message})
+        return result["final_response"]
 
     # Called from main.py's "bye" flow once the user has answered the save prompt.
     def end_session(self, save: bool) -> Optional[Path]:

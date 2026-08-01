@@ -1,12 +1,13 @@
 # Uesed for testing
 class DefaultTool():
-    
+
     def __init__(self):
 
         print("Default tool initialized.")
 
-    # The run() function of each tool returns a string, passed to the orchestrator to use to provide and answer.
+    # Every tool's run() returns a ToolResult (see tools/base.py), passed to
+    # the orchestrator to use to provide an answer.
     def run(self, tool_args):
 
         print("Default tool running...")
-        return "Default tool has completed."
+        return {"output": "Default tool has completed.", "relay_verbatim": False}

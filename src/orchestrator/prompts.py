@@ -105,18 +105,30 @@ def build_tool_decision_prompt(user_message, memory_context):
 
 def build_response_prompt(user_message, tool_call, tool_result, memory_context):
 
-    # Second-stage prompt: Plain-text reply
+    # Second-stage prompt: Plain-text reply.
+    # tool_result is a ToolResult (see tools/base.py): {"output": str, "relay_verbatim": bool}.
     memory_section = _build_memory_section(memory_context)
+
+    if tool_result["relay_verbatim"]:
+        # The tool already produced a complete, user-ready answer (e.g. RAG) --
+        # tell the model to show it as-is instead of paraphrasing it away.
+        instruction = (
+            "The tool result below was already fully generated as a complete answer. "
+            "Relay it to the user as-is without rewriting or summarizing it, then ask "
+            "what they'd like help with next."
+        )
+    else:
+        instruction = "Using the tool result below, write a concise, helpful reply to the user."
 
     SYSTEM_PROMPT = f"""
         You are the same orchestrator agent, now replying to the user directly.
         You already routed the user's message to the "{tool_call.tool}" tool and it has produced a result.
         {memory_section}
-        Using the tool result below, write a concise, helpful reply to the user.
+        {instruction}
         Do not mention tool names, JSON, or internal routing details.
 
         Tool result:
-        {tool_result}
+        {tool_result["output"]}
     """
 
     messages = [
@@ -133,30 +145,24 @@ def build_response_prompt(user_message, tool_call, tool_result, memory_context):
     return messages
 
 
-# Extracts the RAG tool's raw answer text out of RAGTool.run()'s formatted
-# result string (a fixed marker sentence, blank line, then the answer).
-def _extract_rag_answer(tool_result: str) -> str:
-
-    parts = tool_result.split("\n\n", 1)
-    return parts[1].strip() if len(parts) == 2 else tool_result.strip()
-
-
 # Third-stage prompt: decides what's worth remembering from this turn.
+# tool_result is a ToolResult (see tools/base.py): {"output": str, "relay_verbatim": bool}.
 def build_mem_update_prompt(user_message, tool_call, tool_result, final_response):
 
-    result_text = str(tool_result) if tool_result is not None else "(no output)"
+    result_text = tool_result["output"]
 
     if tool_call.tool == "rag":
         # RAG's raw answer is the ground truth for this turn -- prefer it over
-        # final_response, which may have paraphrased or trimmed it.
-        rag_answer = _extract_rag_answer(result_text)
+        # final_response, which may have paraphrased or trimmed it. No more
+        # string-splitting needed: tool_result["output"] is already just the
+        # answer text, since relay_verbatim is carried as its own field now.
         result_section = f"""
         This turn used the RAG tool. Structure your memory note as two labeled lines:
         Query: <the user's question, restated concisely>
         Answer: <the key facts from the RAG answer below, condensed>
 
         Raw RAG answer (verbatim, use as source of truth, not the final reply):
-        {rag_answer}
+        {result_text}
         """
     else:
         result_section = f"""
