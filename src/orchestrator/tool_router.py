@@ -2,7 +2,6 @@
 from tools.defaultTool.tool_class import DefaultTool
 from tools.ragTool.tool_class import RAGTool
 from tools.notesTool.tool_class import NotesTool
-from schemas.tool_call import ToolCall
 
 class ToolRouter():
 
@@ -16,12 +15,3 @@ class ToolRouter():
             "note": NotesTool()
 
         }
-
-    # This function should return the output (string format) of each tool, back to the orchestrator
-    def execute_tool(self, tool_call: ToolCall):
-
-        # tool_call.tool is already validated against the 3 registered tools above,
-        tool = self.tools[tool_call.tool]
-
-        # Run each tool with their respective "run()" operation
-        return tool.run(tool_call.args)
