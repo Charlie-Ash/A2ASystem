@@ -1,8 +1,7 @@
-# Builds the orchestrator's LangGraph graph: the same 5-step sequence
+# Builds the orchestrator's LangGraph graph
 # run_orchestrator() used to run as a flat Python function (decide tool ->
 # run tool -> generate reply -> update memory), now expressed as named nodes
-# connected by edges. See the "LangGraph fundamentals" section of the plan
-# this was built from for the concepts referenced in the comments below.
+# connected by edges.
 from typing import TYPE_CHECKING
 
 from langgraph.graph import StateGraph, START, END
@@ -11,9 +10,8 @@ from orchestrator.state import OrchestratorState
 
 # OrchestratorLLM/ToolRouter are only used here as type hints. Importing them
 # for real (rather than just for type-checking) would force this module to
-# also import vllm transitively (OrchestratorLLM's module loads it at the
-# top), even though build_graph itself never touches vllm directly and is
-# perfectly happy running against fake/mocked stand-ins (see
+# also import vllm transitively, even though build_graph itself never touches vllm
+# directly and is perfectly happy running against fake/mocked stand-ins (see
 # tests/fake_dependencies.py) that only need to match the same shape.
 if TYPE_CHECKING:
     from orchestrator.llm import OrchestratorLLM
