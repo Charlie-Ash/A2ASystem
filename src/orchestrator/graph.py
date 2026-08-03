@@ -4,6 +4,8 @@
 # connected by edges.
 from typing import TYPE_CHECKING
 
+from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
 
 from orchestrator.state import OrchestratorState
@@ -18,13 +20,22 @@ if TYPE_CHECKING:
     from orchestrator.tool_router import ToolRouter
 
 
-def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter"):
+def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter", checkpointer=None):
     """Assemble and compile the orchestrator graph.
 
     Takes the LLM and tool router as arguments rather than constructing them
     itself, so the graph's wiring can be tested with fake/mocked versions of
-    both without needing a GPU (see tests/test_graph_flow.py).
+    both without needing a GPU (see tests/test_graph_flow.py). `checkpointer`
+    defaults to a fresh MemorySaver -- an in-RAM store, keyed by the
+    `thread_id` passed into invoke()'s config, that snapshots this graph's
+    state after every node runs. That's what lets state["messages"] (below)
+    actually carry over from one invoke() call to the next instead of every
+    turn starting from a blank state. Accepting it as a parameter (rather
+    than always constructing one internally) keeps it swappable in tests.
     """
+
+    if checkpointer is None:
+        checkpointer = MemorySaver()
 
     graph = StateGraph(OrchestratorState)
 
@@ -35,7 +46,12 @@ def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter"):
     # deterministic follow-up to this same LLM call, not an independent step.
     def decide_tool(state: OrchestratorState) -> dict:
 
-        tool_call = llm.tool_decision(state["user_message"])
+        # History *before* this turn's message -- the new HumanMessage is
+        # added below via the returned "messages" update, not read back by
+        # this same call.
+        history_messages = state.get("messages", [])
+
+        tool_call = llm.tool_decision(state["user_message"], history_messages)
 
         print("LLM tool decision: ", tool_call.tool)
         print("LLM tool argument: ", tool_call.args)
@@ -46,7 +62,11 @@ def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter"):
         if tool_call.tool == "note" and not tool_call.args.get("content"):
             tool_call.args["content"] = state["user_message"]
 
-        return {"tool_call": tool_call}
+        # Appended (not replacing) onto state["messages"] via the
+        # add_messages reducer declared in state.py -- visible to
+        # generate_response later in this same run, and to decide_tool on
+        # the next turn once MemorySaver has checkpointed it.
+        return {"tool_call": tool_call, "messages": [HumanMessage(content=state["user_message"])]}
 
     # Routing function for the conditional edge below: reads the tool_call
     # that decide_tool just produced and picks which branch runs next. Its
@@ -72,14 +92,20 @@ def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter"):
     # actually sees.
     def generate_response(state: OrchestratorState) -> dict:
 
+        # state["messages"] already includes this turn's HumanMessage
+        # (decide_tool's update was merged in before this node ran) --
+        # drop it so history_messages keeps the same "turns before this
+        # one" contract build_response_prompt/build_tool_decision_prompt
+        # both expect, with user_message supplied separately.
+        history_messages = state["messages"][:-1]
         final_response = llm.generate_response(
-            state["user_message"], state["tool_call"], state["tool_result"]
+            state["user_message"], history_messages, state["tool_call"], state["tool_result"]
         )
-        return {"final_response": final_response}
+        return {"final_response": final_response, "messages": [AIMessage(content=final_response)]}
 
-    # Node: summarize this turn into conversation memory. Returns no state
-    # updates of its own (it only has a side effect: appending to
-    # system_memory.md) -- an empty dict is a valid, no-op node return.
+    # Node: summarize this turn into the chat log. Returns no state updates
+    # of its own (it only has a side effect: appending to chat_log.md) --
+    # an empty dict is a valid, no-op node return.
     def update_memory(state: OrchestratorState) -> dict:
 
         llm.orchestrator_mem_update(
@@ -117,4 +143,4 @@ def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter"):
     graph.add_edge("generate_response", "update_memory")
     graph.add_edge("update_memory", END)
 
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)

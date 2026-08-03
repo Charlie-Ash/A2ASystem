@@ -1,35 +1,31 @@
 # Orchestrator prompt building
-from orchestrator.memory_manager import EMPTY_MEMORY_PLACEHOLDER
+from langchain_core.messages import convert_to_openai_messages
+
+# Caps how many past turns from graph state (OrchestratorState["messages"],
+# see state.py) get replayed into the tool-decision/response prompts, so a
+# long session's history can't blow the orchestrator's 4096-token budget.
+MAX_HISTORY_TURNS = 8
 
 
-# Builds the "CONVERSATION MEMORY SO FAR" block shared by both phase-1 and
-# phase-2 prompts; omitted entirely while there's no memory yet, so early
-# turns aren't cluttered with a placeholder line.
-def _build_memory_section(memory_context: str) -> str:
+# Converts the tail of a graph-state messages list (HumanMessage/AIMessage
+# objects) into the {"role": ..., "content": ...} dicts apply_chat_template
+# expects, so they can be spliced in as real prior turns rather than folded
+# into the system prompt as a paraphrased summary.
+def _history_to_chat_messages(history_messages):
 
-    if not memory_context or memory_context == EMPTY_MEMORY_PLACEHOLDER:
-        return ""
-
-    return f"""
-        -----------------------
-        CONVERSATION MEMORY SO FAR
-        -----------------------
-        {memory_context}
-    """
+    recent = history_messages[-(MAX_HISTORY_TURNS * 2):]
+    return convert_to_openai_messages(recent)
 
 
-def build_tool_decision_prompt(user_message, memory_context):
+def build_tool_decision_prompt(user_message, history_messages):
 
     # First stage prompt: Tool Route
     # JSON shape enforced by guided decoding (see schemas/tool_schema.py),
     # so this prompt only needs to cover tool semantics, not output formatting.
-    memory_section = _build_memory_section(memory_context)
-
     SYSTEM_PROMPT = f"""
         You are an orchestrator to a vast agent system.
         It is your role to decide on a suitble tool within the agent system to use in the user's work.
         Route tools that are connected to other agents accordingly from the user's message.
-        {memory_section}
         -----------------------
         TOOLS AVAILABLE
         -----------------------
@@ -89,12 +85,15 @@ def build_tool_decision_prompt(user_message, memory_context):
         }}
     """
 
-    # Have the system prompt and user message split, avoiding using a single, excessivly long prompt that may cause unexpected behaviors
+    # Have the system prompt and user message split, avoiding using a single, excessivly long prompt that may cause unexpected behaviors.
+    # Prior turns (if any) are spliced in between as real chat turns, so the
+    # model sees actual history instead of a summary folded into the system prompt.
     messages = [
         {
             "role": "system",
             "content": SYSTEM_PROMPT,
         },
+        *_history_to_chat_messages(history_messages),
         {
             "role": "user",
             "content": user_message,
@@ -103,12 +102,10 @@ def build_tool_decision_prompt(user_message, memory_context):
 
     return messages
 
-def build_response_prompt(user_message, tool_call, tool_result, memory_context):
+def build_response_prompt(user_message, history_messages, tool_call, tool_result):
 
     # Second-stage prompt: Plain-text reply.
     # tool_result is a ToolResult (see tools/base.py): {"output": str, "relay_verbatim": bool}.
-    memory_section = _build_memory_section(memory_context)
-
     if tool_result["relay_verbatim"]:
         # The tool already produced a complete, user-ready answer (e.g. RAG) --
         # tell the model to show it as-is instead of paraphrasing it away.
@@ -123,7 +120,6 @@ def build_response_prompt(user_message, tool_call, tool_result, memory_context):
     SYSTEM_PROMPT = f"""
         You are the same orchestrator agent, now replying to the user directly.
         You already routed the user's message to the "{tool_call.tool}" tool and it has produced a result.
-        {memory_section}
         {instruction}
         Do not mention tool names, JSON, or internal routing details.
 
@@ -136,6 +132,7 @@ def build_response_prompt(user_message, tool_call, tool_result, memory_context):
             "role": "system",
             "content": SYSTEM_PROMPT,
         },
+        *_history_to_chat_messages(history_messages),
         {
             "role": "user",
             "content": user_message,

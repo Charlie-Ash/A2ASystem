@@ -61,10 +61,9 @@ class OrchestratorLLM():
         )
 
     # Phase 1 Orchestrotor LLM usage: Tool decision
-    def tool_decision(self, user_message) -> ToolCall:
+    def tool_decision(self, user_message, history_messages) -> ToolCall:
 
-        memory_context = memory_manager.read_system_memory()
-        unformatted_prompt = build_tool_decision_prompt(user_message, memory_context)
+        unformatted_prompt = build_tool_decision_prompt(user_message, history_messages)
 
         # Use tokenizers to format "prompt"
         tokenizer = self.llm.get_tokenizer()
@@ -87,12 +86,11 @@ class OrchestratorLLM():
         return ToolCall.model_validate_json(raw_text)
 
     # Phase 2 Orchestrotor LLM usage: Response Generation
-    def generate_response(self, user_message, tool_call: ToolCall, tool_result) -> str:
+    def generate_response(self, user_message, history_messages, tool_call: ToolCall, tool_result) -> str:
 
         # tool_result is a ToolResult (see tools/base.py); every tool always
         # returns one, so no None-handling is needed here anymore.
-        memory_context = memory_manager.read_system_memory()
-        unformatted_prompt = build_response_prompt(user_message, tool_call, tool_result, memory_context)
+        unformatted_prompt = build_response_prompt(user_message, history_messages, tool_call, tool_result)
 
         tokenizer = self.llm.get_tokenizer()
 
@@ -135,7 +133,7 @@ class OrchestratorLLM():
     # Phase 4 Orchestrotor LLM usage: Chat memory filename decision (used only at "bye" + "y")
     def decide_chat_memory_filename(self) -> str:
 
-        memory_content = memory_manager.read_system_memory(max_entries=None)
+        memory_content = memory_manager.read_chat_log()
 
         try:
             unformatted_prompt = build_filename_prompt(memory_content)

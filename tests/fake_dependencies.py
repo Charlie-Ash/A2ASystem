@@ -21,14 +21,14 @@ class FakeOrchestratorLLM:
         self.generate_response_calls = []
         self.orchestrator_mem_update_calls = []
 
-    def tool_decision(self, user_message) -> ToolCall:
+    def tool_decision(self, user_message, history_messages) -> ToolCall:
 
-        self.tool_decision_calls.append(user_message)
+        self.tool_decision_calls.append((user_message, history_messages))
         return self.next_tool_call
 
-    def generate_response(self, user_message, tool_call, tool_result) -> str:
+    def generate_response(self, user_message, history_messages, tool_call, tool_result) -> str:
 
-        self.generate_response_calls.append((user_message, tool_call, tool_result))
+        self.generate_response_calls.append((user_message, history_messages, tool_call, tool_result))
         return f"canned reply about {tool_result['output']}"
 
     def orchestrator_mem_update(self, user_message, tool_call, tool_result, final_response) -> None:
