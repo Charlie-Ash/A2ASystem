@@ -3,7 +3,10 @@
 # engine + vector index in its __init__, so it must never be constructed
 # here -- these fakes only need to satisfy the same shapes graph.py calls
 # against (OrchestratorLLM's phase methods, and the Tool protocol's run()).
+from langgraph.graph import StateGraph, START, END
+
 from schemas.tool_call import ToolCall
+from tools.ragTool.state import RAGSubgraphState
 
 
 class FakeOrchestratorLLM:
@@ -54,15 +57,41 @@ class FakeTool:
         return {"output": f"{self.name}-output", "relay_verbatim": self.relay_verbatim}
 
 
+# Stands in for tools.ragTool.graph.build_rag_subgraph()'s real output: an
+# actually-compiled StateGraph over the real RAGSubgraphState (not a bare
+# function), so tests exercise the real subgraph-as-node mechanics (shared
+# tool_call/tool_result keys, checkpointer inheritance, xray namespacing)
+# without ever touching vLLM/Qdrant/llama-index. Compiled with no explicit
+# checkpointer, same as the real build_rag_subgraph(), so it inherits
+# whatever checkpointer the parent test graph is built with.
+def build_fake_rag_subgraph(canned_output="rag-output", relay_verbatim=True, received_args_sink=None):
+
+    def fake_rag_run(state: RAGSubgraphState) -> dict:
+        if received_args_sink is not None:
+            received_args_sink["args"] = state["tool_call"].args
+        return {"tool_result": {"output": canned_output, "relay_verbatim": relay_verbatim}}
+
+    sub = StateGraph(RAGSubgraphState)
+    sub.add_node("fake_rag_run", fake_rag_run)
+    sub.add_edge(START, "fake_rag_run")
+    sub.add_edge("fake_rag_run", END)
+    return sub.compile()
+
+
 class FakeToolRouter:
     """Same shape as the real ToolRouter (a `.tools` dict keyed by tool
-    name), but built from FakeTool instances instead of the real,
-    GPU/filesystem-touching tool classes."""
+    name, plus a `.rag_subgraph`), but built from FakeTool/fake-subgraph
+    instances instead of the real, GPU/filesystem-touching tool classes."""
 
     def __init__(self):
 
         self.tools = {
             "default": FakeTool("default"),
-            "rag": FakeTool("rag", relay_verbatim=True),
             "note": FakeTool("note"),
         }
+
+        # RAGTool no longer satisfies the Tool protocol -- see tool_router.py.
+        self.rag_received_args = {"args": None}
+        self.rag_subgraph = build_fake_rag_subgraph(
+            canned_output="rag-output", relay_verbatim=True, received_args_sink=self.rag_received_args
+        )

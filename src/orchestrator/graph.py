@@ -115,7 +115,11 @@ def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter", checkpointer=
 
     graph.add_node("decide_tool", decide_tool)
     graph.add_node("run_default_tool", make_tool_node("default"))
-    graph.add_node("run_rag_tool", make_tool_node("rag"))
+    # RAG is registered as a compiled subgraph directly, not via
+    # make_tool_node -- it shares OrchestratorState's tool_call/tool_result
+    # keys (see tools/ragTool/state.py), so LangGraph passes tool_call in and
+    # merges tool_result back out with no translation code needed here.
+    graph.add_node("run_rag_tool", tool_router.rag_subgraph)
     graph.add_node("run_note_tool", make_tool_node("note"))
     graph.add_node("generate_response", generate_response)
     graph.add_node("update_memory", update_memory)

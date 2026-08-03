@@ -25,8 +25,15 @@ def test_each_tool_branch_is_reached_and_produces_a_final_response(tool_name):
 
     result = graph.invoke({"user_message": "hello there"}, config=_thread_config())
 
-    # The matching fake tool actually ran (and no other one did).
-    assert tool_router.tools[tool_name].received_args is not None
+    # The matching fake tool/subgraph actually ran (and no other one did).
+    # "rag" isn't in tool_router.tools anymore (see FakeToolRouter) -- it's
+    # tracked separately via rag_received_args.
+    if tool_name == "rag":
+        assert tool_router.rag_received_args["args"] is not None
+    else:
+        assert tool_router.tools[tool_name].received_args is not None
+        assert tool_router.rag_received_args["args"] is None
+
     for other_name, other_tool in tool_router.tools.items():
         if other_name != tool_name:
             assert other_tool.received_args is None
@@ -47,7 +54,7 @@ def test_rag_branch_always_receives_the_users_exact_message_as_query():
 
     graph.invoke({"user_message": "what is Pete's favorite subject?"}, config=_thread_config())
 
-    assert tool_router.tools["rag"].received_args == {"query": "what is Pete's favorite subject?"}
+    assert tool_router.rag_received_args["args"] == {"query": "what is Pete's favorite subject?"}
 
 
 def test_note_branch_falls_back_to_user_message_when_content_is_missing():

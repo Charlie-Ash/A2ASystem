@@ -41,3 +41,15 @@ def test_mermaid_diagram_shows_the_conditional_branch():
     # wired to all 3 tool nodes, not just some of them.
     for node_name in ("run_default_tool", "run_rag_tool", "run_note_tool"):
         assert node_name in mermaid_text
+
+
+def test_rag_branch_is_wired_as_a_subgraph_with_its_own_internal_nodes():
+
+    # run_rag_tool's action is a compiled subgraph now (see
+    # tools/ragTool/graph.py), not a plain function -- xray=True surfaces its
+    # internal nodes namespaced as "run_rag_tool:<inner_node_name>", which a
+    # regression back to a plain function would no longer produce.
+    compiled_graph = _build_test_graph()
+    xray_node_names = set(compiled_graph.get_graph(xray=True).nodes.keys())
+
+    assert "run_rag_tool:fake_rag_run" in xray_node_names
