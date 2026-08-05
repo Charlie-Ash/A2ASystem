@@ -9,5 +9,6 @@ sentence-transformers
 langgraph
 pytest
 langchain-core>=0.3.0
+ipython
 # Dowload CUDA-enabled "torch" like so
 # pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
