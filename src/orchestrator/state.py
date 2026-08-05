@@ -12,7 +12,7 @@ from langgraph.graph.message import add_messages
 from schemas.tool_call import ToolCall
 from tools.base import ToolResult
 
-
+# Orchestrator graph Typed Dictionary definition
 class OrchestratorState(TypedDict):
 
     # The raw text the user typed this turn.

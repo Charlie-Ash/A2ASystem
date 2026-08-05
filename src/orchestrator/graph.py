@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
 
 def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter", checkpointer=None):
+    # build_graph's doc string below
     """Assemble and compile the orchestrator graph.
 
     Takes the LLM and tool router as arguments rather than constructing them
