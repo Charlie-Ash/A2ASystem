@@ -10,5 +10,8 @@ langgraph
 pytest
 langchain-core>=0.3.0
 ipython
+a2a-sdk[http-server]>=0.3.0,<1.0.0
+uvicorn
+pytest-asyncio
 # Dowload CUDA-enabled "torch" like so
 # pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128

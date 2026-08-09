@@ -26,3 +26,7 @@ LLM_MODEL = os.environ.get("RAG_LLM_MODEL", "google/gemma-4-E2B-it-qat-w4a16-ct"
 # 0.3 gives ~9.6 GiB (this model's ~7.3 GiB weights + ~2.3 GiB headroom).
 GPU_MEMORY_UTILIZATION = float(os.environ.get("RAG_GPU_MEMORY_UTILIZATION", "0.3"))
 MAX_MODEL_LEN = int(os.environ.get("RAG_MAX_MODEL_LEN", "4096"))
+
+# Standalone A2A server bind address (see a2a_server.py). 
+RAG_A2A_HOST = os.environ.get("RAG_A2A_HOST", "0.0.0.0")
+RAG_A2A_PORT = int(os.environ.get("RAG_A2A_PORT", "8001"))

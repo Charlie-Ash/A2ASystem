@@ -6,7 +6,7 @@
 from langgraph.graph import StateGraph, START, END
 
 from schemas.tool_call import ToolCall
-from tools.ragTool.state import RAGSubgraphState
+from tools.ragTool.rag.state import RAGSubgraphState
 
 
 class FakeOrchestratorLLM:
@@ -57,7 +57,7 @@ class FakeTool:
         return {"output": f"{self.name}-output", "relay_verbatim": self.relay_verbatim}
 
 
-# Stands in for tools.ragTool.graph.build_rag_subgraph()'s real output: an
+# Stands in for tools.ragTool.rag.graph.build_rag_subgraph()'s real output: an
 # actually-compiled StateGraph over the real RAGSubgraphState (not a bare
 # function), so tests exercise the real subgraph-as-node mechanics (shared
 # tool_call/tool_result keys, checkpointer inheritance, xray namespacing)

@@ -12,11 +12,11 @@ from pathlib import Path
 # `pytest.ini`'s `pythonpath = src` setting only applies when pytest is the
 # thing running the code. This script is run as a plain `python file.py`
 # instead, so it has to add `src/` to sys.path itself, the same way any
-# standalone script would, before it can do `from tools.ragTool.graph import ...`.
+# standalone script would, before it can do `from tools.ragTool.rag.graph import ...`.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from tools.ragTool.graph import build_rag_subgraph
+from tools.ragTool.rag.graph import build_rag_subgraph
 
 OUTPUT_PATH = Path(__file__).resolve().parent / "output" / "rag_graph.png"
 

@@ -23,7 +23,7 @@ sys.path.insert(0, str(REPO_ROOT / "tests"))
 
 from schemas.tool_call import ToolCall
 from orchestrator.graph import build_graph
-from tools.ragTool.graph import build_rag_subgraph
+from tools.ragTool.rag.graph import build_rag_subgraph
 from fake_dependencies import FakeOrchestratorLLM, FakeTool
 
 OUTPUT_PATH = Path(__file__).resolve().parent / "output" / "orchestrator_graph.png"

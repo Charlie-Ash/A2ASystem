@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 
 from langgraph.graph import StateGraph, START, END
 
-from tools.ragTool.state import RAGSubgraphState
-from tools.ragTool.userQuery import user_query
+from tools.ragTool.rag.state import RAGSubgraphState
+from tools.ragTool.rag.userQuery import user_query
 
 # Imported only for "VectorStoreIndex"/"LLM"/"SamplingParams" to be resolved 
 # as types for string-quoted annotations on build_rag_subgraph

@@ -46,7 +46,7 @@ def test_mermaid_diagram_shows_the_conditional_branch():
 def test_rag_branch_is_wired_as_a_subgraph_with_its_own_internal_nodes():
 
     # run_rag_tool's action is a compiled subgraph now (see
-    # tools/ragTool/graph.py), not a plain function -- xray=True surfaces its
+    # tools/ragTool/rag/graph.py), not a plain function -- xray=True surfaces its
     # internal nodes namespaced as "run_rag_tool:<inner_node_name>", which a
     # regression back to a plain function would no longer produce.
     compiled_graph = _build_test_graph()

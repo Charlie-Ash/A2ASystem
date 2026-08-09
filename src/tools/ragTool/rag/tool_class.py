@@ -3,8 +3,8 @@ import torch
 from vllm import LLM, SamplingParams
 import qdrant_client
 
-from tools.ragTool.dataIngestion import build_vector_index, load_vector_index
-from tools.ragTool.graph import build_rag_subgraph
+from tools.ragTool.rag.dataIngestion import build_vector_index, load_vector_index
+from tools.ragTool.rag.graph import build_rag_subgraph
 from tools.ragTool.config import (
     COLLECTION_NAME, QDRANT_DB_PATH, LLM_MODEL, GPU_MEMORY_UTILIZATION, MAX_MODEL_LEN
 )
