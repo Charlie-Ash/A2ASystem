@@ -1,9 +1,9 @@
 # Runs the compiled graph end-to-end with fake LLM/tool dependencies (no
 # GPU), checking that each tool branch is actually reached and that the two
 # rule-based ToolCall.args overrides (RAG always gets the exact user
-# question; a note never saves with blank content) still fire correctly now
-# that they live inside graph.py's decide_tool node instead of
-# orchestrator.py.
+# question; Actions always gets the exact user message as its request) still
+# fire correctly now that they live inside graph.py's decide_tool node
+# instead of orchestrator.py.
 import pytest
 
 from schemas.tool_call import ToolCall
@@ -16,7 +16,7 @@ def _thread_config(thread_id="test-thread"):
     return {"configurable": {"thread_id": thread_id}}
 
 
-@pytest.mark.parametrize("tool_name", ["default", "rag", "note"])
+@pytest.mark.parametrize("tool_name", ["default", "rag", "actions"])
 def test_each_tool_branch_is_reached_and_produces_a_final_response(tool_name):
 
     llm = FakeOrchestratorLLM(next_tool_call=ToolCall(tool=tool_name, action="run", args={}))
@@ -26,13 +26,19 @@ def test_each_tool_branch_is_reached_and_produces_a_final_response(tool_name):
     result = graph.invoke({"user_message": "hello there"}, config=_thread_config())
 
     # The matching fake tool/subgraph actually ran (and no other one did).
-    # "rag" isn't in tool_router.tools anymore (see FakeToolRouter) -- it's
-    # tracked separately via rag_received_args.
+    # "rag"/"actions" aren't in tool_router.tools anymore (see
+    # FakeToolRouter) -- they're tracked separately via
+    # rag_received_args/actions_received_args.
     if tool_name == "rag":
         assert tool_router.rag_received_args["args"] is not None
+        assert tool_router.actions_received_args["args"] is None
+    elif tool_name == "actions":
+        assert tool_router.actions_received_args["args"] is not None
+        assert tool_router.rag_received_args["args"] is None
     else:
         assert tool_router.tools[tool_name].received_args is not None
         assert tool_router.rag_received_args["args"] is None
+        assert tool_router.actions_received_args["args"] is None
 
     for other_name, other_tool in tool_router.tools.items():
         if other_name != tool_name:
@@ -57,33 +63,54 @@ def test_rag_branch_always_receives_the_users_exact_message_as_query():
     assert tool_router.rag_received_args["args"] == {"query": "what is Pete's favorite subject?"}
 
 
-def test_note_branch_falls_back_to_user_message_when_content_is_missing():
+def test_actions_branch_always_receives_the_users_exact_message_as_request():
 
-    llm = FakeOrchestratorLLM(next_tool_call=ToolCall(tool="note", action="run", args={}))
-    tool_router = FakeToolRouter()
-    graph = build_graph(llm, tool_router)
-
-    graph.invoke({"user_message": "remember that Pete likes astronomy"}, config=_thread_config())
-
-    assert tool_router.tools["note"].received_args == {"content": "remember that Pete likes astronomy"}
-
-
-def test_note_branch_keeps_llm_provided_content_when_present():
-
+    # Content generation now happens inside the Actions subgraph itself, not
+    # in decide_tool -- so decide_tool's rule-based override always sets
+    # "request" to the raw user message, regardless of whatever (if
+    # anything) the LLM put in args, same shape as RAG's "query" override.
     llm = FakeOrchestratorLLM(
-        next_tool_call=ToolCall(
-            tool="note", action="run", args={"content": "Pete likes astronomy", "file_name": "pete"}
-        )
+        next_tool_call=ToolCall(tool="actions", action="run", args={"request": "something else entirely"})
     )
     tool_router = FakeToolRouter()
     graph = build_graph(llm, tool_router)
 
     graph.invoke({"user_message": "remember Pete likes astronomy"}, config=_thread_config())
 
-    assert tool_router.tools["note"].received_args == {
-        "content": "Pete likes astronomy",
-        "file_name": "pete",
-    }
+    assert tool_router.actions_received_args["args"] == {"request": "remember Pete likes astronomy"}
+
+
+def test_actions_branch_receives_chat_history_from_the_parent_graph():
+
+    # Regression coverage for ActionsSubgraphState's shared "messages" key
+    # (see tools/actionsTool/actions/state.py): without it, the Actions
+    # agent's content-generation node would have no way to resolve
+    # references like "note down your previous answer to this question".
+    llm = FakeOrchestratorLLM(next_tool_call=ToolCall(tool="default", action="run", args={}))
+    tool_router = FakeToolRouter()
+    graph = build_graph(llm, tool_router)
+    config = _thread_config("actions-history-thread")
+
+    graph.invoke({"user_message": "first message"}, config=config)
+
+    llm.next_tool_call = ToolCall(tool="actions", action="run", args={})
+    graph.invoke({"user_message": "note down your previous answer"}, config=config)
+
+    received_messages = tool_router.actions_received_messages["messages"]
+    assert received_messages is not None
+    # The fake node records the raw state["messages"] it's handed as a
+    # subgraph -- this is a structural check that the shared "messages" key
+    # actually crosses the subgraph boundary with the checkpointed history,
+    # not a check of generate_content's own [:-1] "drop the current turn"
+    # slicing (that's real-node logic, exercised only on the GPU machine,
+    # same as generate_answer's real logic isn't unit-tested here either).
+    # So this includes the first turn's HumanMessage + AIMessage *and* this
+    # turn's own just-appended HumanMessage.
+    assert [m.content for m in received_messages] == [
+        "first message",
+        "canned reply about default-output",
+        "note down your previous answer",
+    ]
 
 
 def test_conversation_history_persists_across_turns_with_same_thread_id():

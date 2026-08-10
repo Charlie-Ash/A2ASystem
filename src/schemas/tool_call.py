@@ -8,7 +8,7 @@ class ToolCall(BaseModel):
     tool: Literal[
         "default",
         "rag",
-        "note"
+        "actions"
     ]
 
     action: Literal["run"]

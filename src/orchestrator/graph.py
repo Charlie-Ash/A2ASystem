@@ -60,8 +60,8 @@ def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter", checkpointer=
         if tool_call.tool == "rag":
             tool_call.args["query"] = state["user_message"]
 
-        if tool_call.tool == "note" and not tool_call.args.get("content"):
-            tool_call.args["content"] = state["user_message"]
+        if tool_call.tool == "actions":
+            tool_call.args["request"] = state["user_message"]
 
         # Appended (not replacing) onto state["messages"] via the
         # add_messages reducer declared in state.py -- visible to
@@ -75,7 +75,7 @@ def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter", checkpointer=
     # add_conditional_edges further down.
     def route_to_tool(state: OrchestratorState) -> str:
 
-        return state["tool_call"].tool  # "default" | "rag" | "note"
+        return state["tool_call"].tool  # "default" | "rag" | "actions"
 
     # Builds one tool-node function per registered tool name. Each node is a
     # one-line delegation to that tool's own run() -- the actual tool
@@ -121,7 +121,12 @@ def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter", checkpointer=
     # keys (see tools/ragTool/rag/state.py), so LangGraph passes tool_call in and
     # merges tool_result back out with no translation code needed here.
     graph.add_node("run_rag_tool", tool_router.rag_subgraph)
-    graph.add_node("run_note_tool", make_tool_node("note"))
+    # Actions is registered as a compiled subgraph directly too, same
+    # reasoning as run_rag_tool -- it shares OrchestratorState's
+    # tool_call/tool_result/messages keys (see
+    # tools/actionsTool/actions/state.py), so LangGraph passes them in/out
+    # with no translation code needed here.
+    graph.add_node("run_actions_tool", tool_router.actions_subgraph)
     graph.add_node("generate_response", generate_response)
     graph.add_node("update_memory", update_memory)
 
@@ -136,14 +141,14 @@ def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter", checkpointer=
         {
             "default": "run_default_tool",
             "rag": "run_rag_tool",
-            "note": "run_note_tool",
+            "actions": "run_actions_tool",
         },
     )
 
     # All three branches rejoin at the same next step.
     graph.add_edge("run_default_tool", "generate_response")
     graph.add_edge("run_rag_tool", "generate_response")
-    graph.add_edge("run_note_tool", "generate_response")
+    graph.add_edge("run_actions_tool", "generate_response")
 
     graph.add_edge("generate_response", "update_memory")
     graph.add_edge("update_memory", END)

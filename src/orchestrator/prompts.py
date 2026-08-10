@@ -1,20 +1,5 @@
 # Orchestrator prompt building
-from langchain_core.messages import convert_to_openai_messages
-
-# Caps how many past turns from graph state (OrchestratorState["messages"],
-# see state.py) get replayed into the tool-decision/response prompts, so a
-# long session's history can't blow the orchestrator's 4096-token budget.
-MAX_HISTORY_TURNS = 8
-
-
-# Converts the tail of a graph-state messages list (HumanMessage/AIMessage
-# objects) into the {"role": ..., "content": ...} dicts apply_chat_template
-# expects, so they can be spliced in as real prior turns rather than folded
-# into the system prompt as a paraphrased summary.
-def _history_to_chat_messages(history_messages):
-
-    recent = history_messages[-(MAX_HISTORY_TURNS * 2):]
-    return convert_to_openai_messages(recent)
+from chat_history import history_to_chat_messages as _history_to_chat_messages
 
 
 def build_tool_decision_prompt(user_message, history_messages):
@@ -40,16 +25,9 @@ def build_tool_decision_prompt(user_message, history_messages):
             "query": string
         }}
 
-        3. note
-        Use for saving information.
-        args: {{
-            "content": string,
-            "file_name": string
-        }}
-
-        ("file_name" is a short, filesystem-safe title for the note (lowercase,
-        words separated by underscores, no extension) -- the note tool appends
-        "_notes.txt" itself.)
+        3. actions
+        Use for saving/recording information the user asks you to remember.
+        args: {{}}
 
         -----------------------
         EXAMPLES
@@ -68,12 +46,9 @@ def build_tool_decision_prompt(user_message, history_messages):
         User: Remember Pete likes astronomy
         Output:
         {{
-            "tool": "note",
+            "tool": "actions",
             "action": "run",
-            "args": {{
-                "content": "Pete likes astronomy",
-                "file_name": "pete_astronomy"
-                }}
+            "args": {{}}
         }}
 
         User: hello

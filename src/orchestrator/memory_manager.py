@@ -125,7 +125,7 @@ def finalize_and_save(keep: bool, new_name: Optional[str] = None) -> Optional[Pa
     dest_path = dest_dir / f"{slug}_chat_points.md"
 
     # Never overwrite a previous save with the same slug -- disambiguate with a
-    # numeric suffix instead (same pattern as notesTool/noteWriter.py).
+    # numeric suffix instead (same pattern as actionsTool/actions/noteWriter.py).
     suffix = 2
     while dest_path.exists():
         dest_path = dest_dir / f"{slug}_chat_points_{suffix}.md"

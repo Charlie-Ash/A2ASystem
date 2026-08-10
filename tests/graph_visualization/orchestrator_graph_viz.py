@@ -24,6 +24,7 @@ sys.path.insert(0, str(REPO_ROOT / "tests"))
 from schemas.tool_call import ToolCall
 from orchestrator.graph import build_graph
 from tools.ragTool.rag.graph import build_rag_subgraph
+from tools.actionsTool.actions.graph import build_actions_subgraph
 from fake_dependencies import FakeOrchestratorLLM, FakeTool
 
 OUTPUT_PATH = Path(__file__).resolve().parent / "output" / "orchestrator_graph.png"
@@ -40,19 +41,22 @@ def main():
     llm = FakeOrchestratorLLM(next_tool_call=ToolCall(tool="default", action="run", args={}))
 
     # tool_router only needs to look like a ToolRouter: a `.tools` dict
-    # (for the default/note tool nodes) and a `.rag_subgraph` attribute (the
-    # compiled subgraph that gets registered directly as the "run_rag_tool"
-    # node). SimpleNamespace is a plain "bag of attributes" object -- an easy
-    # way to satisfy that shape without writing a whole class for it.
+    # (for the default tool node) and `.rag_subgraph`/`.actions_subgraph`
+    # attributes (the compiled subgraphs that get registered directly as the
+    # "run_rag_tool"/"run_actions_tool" nodes). SimpleNamespace is a plain
+    # "bag of attributes" object -- an easy way to satisfy that shape without
+    # writing a whole class for it.
     #
-    # Using the REAL compiled RAG subgraph here (instead of
-    # FakeToolRouter.rag_subgraph, which pytest uses and which collapses RAG
-    # into one fake_rag_run stub node) means get_graph(xray=True) below can
-    # expand the RAG branch into its true internal nodes.
+    # Using the REAL compiled RAG/Actions subgraphs here (instead of
+    # FakeToolRouter's rag_subgraph/actions_subgraph, which pytest uses and
+    # which collapse each into one fake stub node) means get_graph(xray=True)
+    # below can expand both branches into their true internal nodes.
     real_rag_subgraph = build_rag_subgraph(index=None, llm=None, sampling_params=None)
+    real_actions_subgraph = build_actions_subgraph(llm=None, sampling_params=None)
     tool_router = SimpleNamespace(
-        tools={"default": FakeTool("default"), "note": FakeTool("note")},
+        tools={"default": FakeTool("default")},
         rag_subgraph=real_rag_subgraph,
+        actions_subgraph=real_actions_subgraph,
     )
 
     # No checkpointer passed -> build_graph() defaults to a fresh MemorySaver,
@@ -60,9 +64,9 @@ def main():
     compiled_graph = build_graph(llm, tool_router)
 
     # xray=True tells LangGraph to "look inside" any node that is itself a
-    # compiled subgraph (here, run_rag_tool) and draw its internal nodes too,
-    # namespaced as "run_rag_tool:extract_query" etc., instead of drawing it
-    # as one opaque box.
+    # compiled subgraph (here, run_rag_tool/run_actions_tool) and draw its
+    # internal nodes too, namespaced as "run_rag_tool:extract_query" etc.,
+    # instead of drawing it as one opaque box.
     png_bytes = compiled_graph.get_graph(xray=True).draw_mermaid_png()
 
     # Save to disk so the diagram can be viewed by opening the file, since a

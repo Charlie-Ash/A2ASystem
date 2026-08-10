@@ -3,7 +3,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from tools.notesTool.config import NOTES_DIR
+from tools.actionsTool.config import NOTES_DIR
 
 # Only these characters are allowed through from the LLM-provided file_name,
 # since it becomes part of a filesystem path -- this also rules out path

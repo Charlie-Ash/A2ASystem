@@ -24,7 +24,7 @@ def test_all_expected_nodes_are_present():
         "decide_tool",
         "run_default_tool",
         "run_rag_tool",
-        "run_note_tool",
+        "run_actions_tool",
         "generate_response",
         "update_memory",
     }
@@ -39,7 +39,7 @@ def test_mermaid_diagram_shows_the_conditional_branch():
     # Every branch target should be reachable from decide_tool in the drawn
     # diagram -- a stand-in check that add_conditional_edges' path_map is
     # wired to all 3 tool nodes, not just some of them.
-    for node_name in ("run_default_tool", "run_rag_tool", "run_note_tool"):
+    for node_name in ("run_default_tool", "run_rag_tool", "run_actions_tool"):
         assert node_name in mermaid_text
 
 
@@ -53,3 +53,13 @@ def test_rag_branch_is_wired_as_a_subgraph_with_its_own_internal_nodes():
     xray_node_names = set(compiled_graph.get_graph(xray=True).nodes.keys())
 
     assert "run_rag_tool:fake_rag_run" in xray_node_names
+
+
+def test_actions_branch_is_wired_as_a_subgraph_with_its_own_internal_nodes():
+
+    # Same reasoning as the RAG xray test above, for
+    # tools/actionsTool/actions/graph.py's subgraph.
+    compiled_graph = _build_test_graph()
+    xray_node_names = set(compiled_graph.get_graph(xray=True).nodes.keys())
+
+    assert "run_actions_tool:fake_actions_run" in xray_node_names
