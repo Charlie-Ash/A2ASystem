@@ -2,7 +2,7 @@
 import os
 from vllm import LLM, SamplingParams
 from vllm.sampling_params import StructuredOutputsParams
-from orchestrator.prompts import (
+from orchestrator.pipeline.prompts import (
     build_tool_decision_prompt,
     build_response_prompt,
     build_mem_update_prompt,
@@ -10,12 +10,15 @@ from orchestrator.prompts import (
 )
 from orchestrator import memory_manager
 from schemas.tool_call import ToolCall
-from schemas.tool_schema import TOOL_SCHEMA
 
 class OrchestratorLLM():
 
     # Initialization settings currently set to that of VLLM_RAG
-    def __init__(self):
+    # tool_schema is built by schemas.tool_schema.build_tool_schema() from
+    # whatever tool names ToolRouter actually discovered/configured at
+    # startup -- passed in rather than imported as a module-level constant,
+    # since that set isn't known until ToolRouter.discover() has run.
+    def __init__(self, tool_schema: dict):
 
         # RAG tool's vLLM engine loads on the same GPU (see tools/ragTool/config.py),
         # so this fraction must leave room for that model too instead of assuming
@@ -36,7 +39,7 @@ class OrchestratorLLM():
             top_p=1.0,  # top_p; nucleus sampling
             max_tokens=512,  # Max tokens outputted
             repetition_penalty = 1.1,  # Penalty to apply if tokens continue repeating.
-            structured_outputs=StructuredOutputsParams(json=TOOL_SCHEMA)  # Forces output to match ToolCall's schema
+            structured_outputs=StructuredOutputsParams(json=tool_schema)  # Forces output to match ToolCall's schema, restricted to the tools actually discovered
         )
 
         self.response_sampling_params = SamplingParams(
@@ -61,9 +64,11 @@ class OrchestratorLLM():
         )
 
     # Phase 1 Orchestrotor LLM usage: Tool decision
-    def tool_decision(self, user_message, history_messages) -> ToolCall:
+    # tool_descriptions comes from ToolRouter.describe_tools_for_prompt() --
+    # see build_tool_decision_prompt for the shape.
+    def tool_decision(self, user_message, history_messages, tool_descriptions) -> ToolCall:
 
-        unformatted_prompt = build_tool_decision_prompt(user_message, history_messages)
+        unformatted_prompt = build_tool_decision_prompt(user_message, history_messages, tool_descriptions)
 
         # Use tokenizers to format "prompt"
         tokenizer = self.llm.get_tokenizer()

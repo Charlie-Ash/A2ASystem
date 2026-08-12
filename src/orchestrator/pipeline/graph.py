@@ -8,7 +8,8 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
 
-from orchestrator.state import OrchestratorState
+from orchestrator.agents.remote_agent import call_remote_agent
+from orchestrator.pipeline.state import OrchestratorState
 
 # OrchestratorLLM/ToolRouter are only used here as type hints. Importing them
 # for real (rather than just for type-checking) would force this module to
@@ -16,8 +17,8 @@ from orchestrator.state import OrchestratorState
 # directly and is perfectly happy running against fake/mocked stand-ins (see
 # tests/fake_dependencies.py) that only need to match the same shape.
 if TYPE_CHECKING:
-    from orchestrator.llm import OrchestratorLLM
-    from orchestrator.tool_router import ToolRouter
+    from orchestrator.pipeline.llm import OrchestratorLLM
+    from orchestrator.agents.tool_router import ToolRouter
 
 
 def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter", checkpointer=None):
@@ -33,6 +34,11 @@ def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter", checkpointer=
     actually carry over from one invoke() call to the next instead of every
     turn starting from a blank state. Accepting it as a parameter (rather
     than always constructing one internally) keeps it swappable in tests.
+
+    tool_router.remote_agents must already be populated (via
+    `await tool_router.discover()`) before this is called -- the remote-tool
+    branches are wired up from whatever's in that dict at build time, since
+    LangGraph's graph shape is fixed once compiled.
     """
 
     if checkpointer is None:
@@ -40,11 +46,12 @@ def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter", checkpointer=
 
     graph = StateGraph(OrchestratorState)
 
-    # Node 1: ask the LLM which tool to use, then apply the two existing
-    # rule-based safety nets on top of its answer (RAG always gets the user's
-    # exact question; a note is never saved with blank content). These stay
-    # inline here rather than as their own node because they're cheap,
-    # deterministic follow-up to this same LLM call, not an independent step.
+    # Node 1: ask the LLM which tool to use and record it. No more per-tool
+    # arg-injection rules here (there used to be one for "rag" and one for
+    # "actions") -- now that RAG/Actions are real A2A calls, the plain user
+    # message text *is* the whole interface (the remote executors read it
+    # straight off the A2A message, ignoring tool_call.args entirely -- see
+    # run_remote_tool below), so there's nothing left for those rules to do.
     def decide_tool(state: OrchestratorState) -> dict:
 
         # History *before* this turn's message -- the new HumanMessage is
@@ -52,16 +59,12 @@ def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter", checkpointer=
         # this same call.
         history_messages = state.get("messages", [])
 
-        tool_call = llm.tool_decision(state["user_message"], history_messages)
+        tool_call = llm.tool_decision(
+            state["user_message"], history_messages, tool_router.describe_tools_for_prompt()
+        )
 
         print("LLM tool decision: ", tool_call.tool)
         print("LLM tool argument: ", tool_call.args)
-
-        if tool_call.tool == "rag":
-            tool_call.args["query"] = state["user_message"]
-
-        if tool_call.tool == "actions":
-            tool_call.args["request"] = state["user_message"]
 
         # Appended (not replacing) onto state["messages"] via the
         # add_messages reducer declared in state.py -- visible to
@@ -71,23 +74,57 @@ def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter", checkpointer=
 
     # Routing function for the conditional edge below: reads the tool_call
     # that decide_tool just produced and picks which branch runs next. Its
-    # return value must be one of the keys in the path_map passed to
-    # add_conditional_edges further down.
+    # return value must be one of the keys in the path_map built below --
+    # "default" plus however many remote agents were actually discovered.
     def route_to_tool(state: OrchestratorState) -> str:
 
-        return state["tool_call"].tool  # "default" | "rag" | "actions"
+        return state["tool_call"].tool
 
-    # Builds one tool-node function per registered tool name. Each node is a
-    # one-line delegation to that tool's own run() -- the actual tool
-    # instances and their construction stay owned by ToolRouter, never
-    # duplicated here.
-    def make_tool_node(tool_name: str):
+    # Builds a node for a local, in-process Tool-protocol instance (today,
+    # only "default"). One-line delegation to that tool's own run() -- the
+    # actual tool instances and their construction stay owned by ToolRouter,
+    # never duplicated here.
+    def make_local_tool_node(tool_name: str):
 
-        def run_tool(state: OrchestratorState) -> dict:
+        def run_local_tool(state: OrchestratorState) -> dict:
             tool_result = tool_router.tools[tool_name].run(state["tool_call"].args)
             return {"tool_result": tool_result}
 
-        return run_tool
+        return run_local_tool
+
+    # Builds a node for a remote A2A agent: sends this turn's user message
+    # over the network (via call_remote_agent, see orchestrator/agents/remote_agent.py)
+    # instead of calling an in-process subgraph. This is an async node --
+    # LangGraph runs sync and async nodes side-by-side fine, but the graph
+    # as a whole must be invoked via .ainvoke()/.astream() rather than
+    # .invoke() once any node is async (see orchestrator.py).
+    def make_remote_tool_node(tool_name: str):
+
+        async def run_remote_tool(state: OrchestratorState) -> dict:
+            agent = tool_router.remote_agents[tool_name]
+            tool_result = await call_remote_agent(agent, state["user_message"])
+            return {"tool_result": tool_result}
+
+        return run_remote_tool
+
+    graph.add_node("decide_tool", decide_tool)
+    graph.add_node("run_default_tool", make_local_tool_node("default"))
+    graph.add_edge("run_default_tool", "generate_response")
+
+    # One node/edge pair per discovered remote agent, instead of a fixed
+    # "run_rag_tool"/"run_actions_tool" pair -- however many entries
+    # tool_router.remote_agents ends up with (per orchestrator/config.py's
+    # REMOTE_AGENTS), that's how many branches this graph gets. This is the
+    # actual fix for ToolRouter/graph.py no longer being allowed to look like
+    # "3 hardcoded local function names" once two of them are network calls.
+    path_map = {"default": "run_default_tool"}
+
+    for agent_name in tool_router.remote_agents:
+
+        node_name = f"run_{agent_name}_tool"
+        graph.add_node(node_name, make_remote_tool_node(agent_name))
+        graph.add_edge(node_name, "generate_response")
+        path_map[agent_name] = node_name
 
     # Node: turn the tool's result into the natural-language reply the user
     # actually sees.
@@ -114,41 +151,15 @@ def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter", checkpointer=
         )
         return {}
 
-    graph.add_node("decide_tool", decide_tool)
-    graph.add_node("run_default_tool", make_tool_node("default"))
-    # RAG is registered as a compiled subgraph directly, not via
-    # make_tool_node -- it shares OrchestratorState's tool_call/tool_result
-    # keys (see tools/ragTool/rag/state.py), so LangGraph passes tool_call in and
-    # merges tool_result back out with no translation code needed here.
-    graph.add_node("run_rag_tool", tool_router.rag_subgraph)
-    # Actions is registered as a compiled subgraph directly too, same
-    # reasoning as run_rag_tool -- it shares OrchestratorState's
-    # tool_call/tool_result/messages keys (see
-    # tools/actionsTool/actions/state.py), so LangGraph passes them in/out
-    # with no translation code needed here.
-    graph.add_node("run_actions_tool", tool_router.actions_subgraph)
     graph.add_node("generate_response", generate_response)
     graph.add_node("update_memory", update_memory)
 
     graph.add_edge(START, "decide_tool")
 
     # Conditional edge: after decide_tool, route_to_tool's return value picks
-    # which of these three nodes runs next -- this is the graph's one branch
-    # point, standing in for what ToolRouter's dict lookup used to do inline.
-    graph.add_conditional_edges(
-        "decide_tool",
-        route_to_tool,
-        {
-            "default": "run_default_tool",
-            "rag": "run_rag_tool",
-            "actions": "run_actions_tool",
-        },
-    )
-
-    # All three branches rejoin at the same next step.
-    graph.add_edge("run_default_tool", "generate_response")
-    graph.add_edge("run_rag_tool", "generate_response")
-    graph.add_edge("run_actions_tool", "generate_response")
+    # which branch runs next -- this is the graph's one branch point,
+    # standing in for what ToolRouter's dict lookup used to do inline.
+    graph.add_conditional_edges("decide_tool", route_to_tool, path_map)
 
     graph.add_edge("generate_response", "update_memory")
     graph.add_edge("update_memory", END)

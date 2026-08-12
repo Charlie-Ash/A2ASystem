@@ -1,8 +1,8 @@
 # Shared helper for splicing graph-state chat history (OrchestratorState /
-# ActionsSubgraphState's "messages" field, see orchestrator/state.py and
+# ActionsSubgraphState's "messages" field, see orchestrator/pipeline/state.py and
 # tools/actionsTool/actions/state.py) into a chat-template prompt as real
 # prior turns, rather than a paraphrased summary. Used by both the
-# orchestrator's own prompts (orchestrator/prompts.py) and the Actions
+# orchestrator's own prompts (orchestrator/pipeline/prompts.py) and the Actions
 # agent's content-generation prompt (tools/actionsTool/actions/graph.py), so
 # both read the same conversation history the same way.
 from langchain_core.messages import convert_to_openai_messages

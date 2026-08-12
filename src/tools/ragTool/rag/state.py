@@ -1,10 +1,12 @@
 # State schema for the RAG tool's own SUBGRAPH (see graph.py in this package).
-# tool_call/tool_result are the same keys OrchestratorState already carries --
-# sharing their names is what lets this subgraph be registered directly as a
-# node in the parent graph with no translation/wrapper node (see
-# orchestrator/graph.py). query/retrieved_chunks are private working state:
-# LangGraph never merges them back into the parent, since the parent's schema
-# doesn't declare them.
+# tool_call/tool_result happen to share their names with OrchestratorState's
+# fields (see orchestrator/pipeline/state.py) -- a leftover from when this
+# subgraph used to be registered directly as a node inside the orchestrator's
+# own graph. Since the A2A rework, this subgraph is only ever invoked by this
+# package's own standalone A2A server (a2a/agent_executor.py), as a top-level
+# graph in its own right -- there's no longer a literal parent graph to share
+# keys with. query/retrieved_chunks are private working state either way:
+# LangGraph never merges undeclared fields back to a caller.
 from typing import TypedDict
 
 from schemas.tool_call import ToolCall

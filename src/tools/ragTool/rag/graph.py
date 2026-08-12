@@ -1,4 +1,4 @@
-# Builds the RAG tool's own SUBGRAPH. Mirrors orchestrator/graph.py's
+# Builds the RAG tool's own SUBGRAPH. Mirrors orchestrator/pipeline/graph.py's
 # build_graph(llm, tool_router): takes the already-loaded index/llm/sampling_params
 # as parameters instead of constructing them itself, so this module's wiring can
 # be tested without a GPU (see tests/fake_dependencies.py).

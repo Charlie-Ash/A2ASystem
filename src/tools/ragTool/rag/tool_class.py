@@ -68,8 +68,9 @@ class RAGTool():
 
         # RAGTool no longer satisfies tools/base.py's Tool protocol (a plain
         # run(tool_args) -> ToolResult call). Its per-turn logic is now a
-        # compiled LangGraph subgraph (see graph.py in this package),
-        # registered directly as the "run_rag_tool" node in the orchestrator's
-        # graph instead of being wrapped in a run() call -- see
-        # orchestrator/graph.py and orchestrator/tool_router.py.
+        # compiled LangGraph subgraph (see graph.py in this package), invoked
+        # by this package's own standalone A2A server (a2a/a2a_server.py) --
+        # the orchestrator no longer constructs RAGTool or touches this
+        # subgraph directly at all; it reaches this agent only over the
+        # network, via orchestrator/agents/remote_agent.py.
         self.subgraph = build_rag_subgraph(self.index, self.llm, self.sampling_params)

@@ -1,21 +1,23 @@
 # Bridges the A2A protocol server to the Actions tool's own compiled
 # subgraph (see tools/actionsTool/actions/graph.py). Each incoming A2A
 # message becomes exactly one ToolCall(tool="actions", action="run",
-# args={"request": ...}) fed into the subgraph -- the same ToolCall the
-# orchestrator already builds today before calling this subgraph in-process.
-# This executor is just a second front door onto the same subgraph, run here
-# as a standalone top-level graph (tools/actionsTool/a2a/a2a_server.py)
-# instead of a node nested under the orchestrator's own graph, so it has no
-# checkpointer/cross-call memory of its own.
+# args={"request": ...}), built here from the raw message text -- the
+# orchestrator itself no longer constructs a ToolCall or touches this
+# subgraph at all; it only ever reaches this agent over the network (see
+# orchestrator/agents/remote_agent.py). This executor runs the subgraph as a
+# standalone top-level graph (tools/actionsTool/a2a/a2a_server.py), so it has
+# no checkpointer/cross-call memory of its own.
 #
-# Known limitation, not solved here: when the orchestrator is eventually
-# wired as a real A2A network client (a separate, later task), it won't be
-# able to rely on this subgraph inheriting chat history the way it does
-# in-process today (see ActionsSubgraphState's "messages" field) -- a
+# Known limitation, not solved yet: the orchestrator's own chat history
+# (its MemorySaver-backed OrchestratorState.messages) doesn't reach this
+# subgraph at all now that the call crosses a real network boundary -- a
 # networked call can't share a Python-level MemorySaver object across OS
-# processes. Solving that means the orchestrator explicitly passing whatever
-# context is needed into the A2A task payload itself, once that wiring work
-# happens. RAG's standalone server has the same limitation today.
+# processes the way an in-process nested subgraph node used to. This
+# subgraph's own "messages" field (see actions/state.py) is simply never
+# populated by this executor. Solving that means the orchestrator explicitly
+# passing whatever context is needed into the A2A task payload itself --
+# a separate, later task. RAG's standalone server never depended on chat
+# history in the first place, so it has no equivalent gap.
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater

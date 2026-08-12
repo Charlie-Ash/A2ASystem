@@ -1,15 +1,22 @@
-# Renders the orchestrator's full graph (decide_tool's 3-way branch, with the
-# RAG branch expanded to its real internal nodes) to a PNG, without needing a
-# GPU or real vllm/llama_index/OrchestratorLLM objects.
+# Renders the orchestrator's full graph to a PNG, without needing a GPU or
+# real vllm/OrchestratorLLM objects, or a real network.
 #
 # Run directly: python tests/graph_visualization/orchestrator_graph_viz.py
 # Deliberately NOT named test_*.py -- pytest's default discovery only picks up
 # files matching that pattern, so a plain `pytest` run never executes this.
 # It's meant to be run manually, on demand, whenever you want to eyeball the
 # graph's current shape.
+#
+# Since the A2A rework (orchestrator/pipeline/graph.py's run_rag_tool/run_actions_tool
+# are now real network calls, not nested LangGraph subgraphs -- see
+# orchestrator/agents/remote_agent.py), there's no more internal structure to expand
+# into via xray=True: RAG's/Actions' own extract->generate->... nodes now
+# live inside their own standalone agent processes, invisible from the
+# orchestrator's own graph. So this only draws the orchestrator's top-level
+# shape now, not a merged diagram of all three graphs.
+import asyncio
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 # `pytest.ini`'s `pythonpath = src` setting only applies when pytest is the
 # thing running the code. This script is run as a plain `python file.py`
@@ -22,51 +29,32 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 sys.path.insert(0, str(REPO_ROOT / "tests"))
 
 from schemas.tool_call import ToolCall
-from orchestrator.graph import build_graph
-from tools.ragTool.rag.graph import build_rag_subgraph
-from tools.actionsTool.actions.graph import build_actions_subgraph
-from fake_dependencies import FakeOrchestratorLLM, FakeTool
+from orchestrator.pipeline.graph import build_graph
+from fake_dependencies import FakeOrchestratorLLM, FakeToolRouter
 
 OUTPUT_PATH = Path(__file__).resolve().parent / "output" / "orchestrator_graph.png"
 
 
-def main():
+async def main():
     # build_graph() is written to accept ANY object with the right shape for
-    # llm/tool_router -- it never imports vllm/llama_index itself (see the
-    # `if TYPE_CHECKING:` guard at the top of orchestrator/graph.py), so
+    # llm/tool_router -- it never imports vllm itself (see the
+    # `if TYPE_CHECKING:` guard at the top of orchestrator/pipeline/graph.py), so
     # duck-typed stand-ins work fine for drawing the graph's structure.
-    # FakeOrchestratorLLM (from tests/fake_dependencies.py, the same fakes
-    # the real pytest suite uses) just needs a ToolCall to construct; that
-    # value is never actually read for graph structure/drawing purposes.
     llm = FakeOrchestratorLLM(next_tool_call=ToolCall(tool="default", action="run", args={}))
 
-    # tool_router only needs to look like a ToolRouter: a `.tools` dict
-    # (for the default tool node) and `.rag_subgraph`/`.actions_subgraph`
-    # attributes (the compiled subgraphs that get registered directly as the
-    # "run_rag_tool"/"run_actions_tool" nodes). SimpleNamespace is a plain
-    # "bag of attributes" object -- an easy way to satisfy that shape without
-    # writing a whole class for it.
-    #
-    # Using the REAL compiled RAG/Actions subgraphs here (instead of
-    # FakeToolRouter's rag_subgraph/actions_subgraph, which pytest uses and
-    # which collapse each into one fake stub node) means get_graph(xray=True)
-    # below can expand both branches into their true internal nodes.
-    real_rag_subgraph = build_rag_subgraph(index=None, llm=None, sampling_params=None)
-    real_actions_subgraph = build_actions_subgraph(llm=None, sampling_params=None)
-    tool_router = SimpleNamespace(
-        tools={"default": FakeTool("default")},
-        rag_subgraph=real_rag_subgraph,
-        actions_subgraph=real_actions_subgraph,
-    )
+    # FakeToolRouter.create() spins up real, in-process A2AFastAPIApplication
+    # instances (reached over httpx.ASGITransport, not real sockets) so that
+    # tool_router.remote_agents ends up populated the same way it would be in
+    # production -- with real RemoteAgent/AgentCard objects, just talking to
+    # a fake subgraph underneath. build_graph() only needs remote_agents'
+    # keys to decide how many branches to draw, so this is enough to produce
+    # an accurate diagram of the real branch count/shape.
+    tool_router = await FakeToolRouter.create()
 
     # No checkpointer passed -> build_graph() defaults to a fresh MemorySaver,
     # same as every real call site (orchestrator.py never passes one either).
     compiled_graph = build_graph(llm, tool_router)
 
-    # xray=True tells LangGraph to "look inside" any node that is itself a
-    # compiled subgraph (here, run_rag_tool/run_actions_tool) and draw its
-    # internal nodes too, namespaced as "run_rag_tool:extract_query" etc.,
-    # instead of drawing it as one opaque box.
     png_bytes = compiled_graph.get_graph(xray=True).draw_mermaid_png()
 
     # Save to disk so the diagram can be viewed by opening the file, since a
@@ -86,4 +74,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

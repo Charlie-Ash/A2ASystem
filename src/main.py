@@ -1,18 +1,25 @@
+import asyncio
+
 from orchestrator.orchestrator import Orchestrator
 
 # Secretary system main contact interface
 # Can change this up to a proper interface in the future
 
-def main():
+async def main():
 
-    orchestrator = Orchestrator()
+    # Orchestrator.create() discovers remote A2A agents over the network
+    # (see tool_router.py/remote_agent.py), which is why construction is now
+    # async instead of a plain Orchestrator() call.
+    orchestrator = await Orchestrator.create()
 
     print("Welcome to the Agent-agent system!")  # Change this into something else in the future, maybe.
 
     while True:
 
+        # input() itself is still a blocking call -- fine here, since
+        # nothing else needs to run concurrently while waiting on it.
         input_text = input(">>> ")
-        
+
         if input_text.lower() == "bye":
 
             # Loop until the user gives a valid y/n answer, rather than
@@ -37,8 +44,7 @@ def main():
 
             break
 
-        print(orchestrator.run_orchestrator(input_text))
+        print(await orchestrator.run_orchestrator(input_text))
 
 if __name__ == "__main__":
-    main()
-
+    asyncio.run(main())

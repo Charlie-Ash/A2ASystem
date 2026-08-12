@@ -1,12 +1,12 @@
 # Bridges the A2A protocol server to the RAG tool's own compiled subgraph
 # (see tools/ragTool/rag/graph.py). Each incoming A2A message becomes exactly
-# one ToolCall(tool="rag", action="run", args={"query": ...}) fed into the
-# subgraph -- the same ToolCall the orchestrator already builds today before
-# calling this subgraph in-process. This executor is just a second front
-# door onto the same subgraph, run here as a standalone top-level graph
-# (tools/ragTool/a2a/a2a_server.py) instead of a node nested under the
-# orchestrator's own graph, so it has no checkpointer/cross-call memory of
-# its own.
+# one ToolCall(tool="rag", action="run", args={"query": ...}), built here from
+# the raw message text -- the orchestrator itself no longer constructs a
+# ToolCall or touches this subgraph at all; it only ever reaches this agent
+# over the network (see orchestrator/agents/remote_agent.py). This executor
+# runs the subgraph as a standalone top-level graph
+# (tools/ragTool/a2a/a2a_server.py), so it has no checkpointer/cross-call
+# memory of its own.
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater

@@ -1,14 +1,15 @@
 # State schema for the Actions tool's own SUBGRAPH (see graph.py in this
-# package). tool_call/tool_result are the same keys OrchestratorState already
-# carries -- sharing their names is what lets this subgraph be registered
-# directly as a node in the parent graph with no translation/wrapper node
-# (see orchestrator/graph.py). Unlike RAGSubgraphState, "messages" is also
-# shared: this agent's own content-generation call needs recent chat history
-# to resolve references like "note down your previous answer to this
-# question", which today's decide_tool (before this split) already had
-# access to. request/generated_content/generated_file_name are private
-# working state: LangGraph never merges them back into the parent, since the
-# parent's schema doesn't declare them.
+# package). tool_call/tool_result/messages happen to share their names with
+# OrchestratorState's fields (see orchestrator/pipeline/state.py) -- a
+# leftover from when this subgraph used to be registered directly as a node
+# inside the orchestrator's own graph, sharing its checkpointed chat history
+# so generate_content could resolve references like "note down your previous
+# answer to this question". Since the A2A rework, this subgraph is only ever
+# invoked by this package's own standalone A2A server (a2a/agent_executor.py),
+# with no "messages" passed in at all -- see that file's "known limitation"
+# comment about cross-process chat history not being solved yet.
+# request/generated_content/generated_file_name are private working state
+# either way: LangGraph never merges undeclared fields back to a caller.
 from typing import Annotated, TypedDict
 
 from langchain_core.messages import AnyMessage

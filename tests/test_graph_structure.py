@@ -1,25 +1,30 @@
 # Checks the graph's wiring itself -- node names and connections -- without
-# running any LLM or tool. This catches typo'd node names, a missing edge, or
-# a wrong conditional-edge path map: bugs that would otherwise stay invisible
-# until an actual (GPU-requiring) run of main.py hit that exact branch.
+# running any LLM or real network call. This catches typo'd node names, a
+# missing edge, or a wrong conditional-edge path map: bugs that would
+# otherwise stay invisible until an actual (GPU-and-network-requiring) run of
+# main.py hit that exact branch.
 from schemas.tool_call import ToolCall
-from orchestrator.graph import build_graph
+from orchestrator.pipeline.graph import build_graph
 
 from fake_dependencies import FakeOrchestratorLLM, FakeToolRouter
 
 
-def _build_test_graph():
+async def _build_test_graph():
 
     llm = FakeOrchestratorLLM(next_tool_call=ToolCall(tool="default", action="run", args={}))
-    tool_router = FakeToolRouter()
+    tool_router = await FakeToolRouter.create()
     return build_graph(llm, tool_router)
 
 
-def test_all_expected_nodes_are_present():
+async def test_all_expected_nodes_are_present():
 
-    compiled_graph = _build_test_graph()
+    compiled_graph = await _build_test_graph()
     node_names = set(compiled_graph.get_graph().nodes.keys())
 
+    # "run_rag_tool"/"run_actions_tool" are built from whatever's in
+    # tool_router.remote_agents at build_graph() time -- FakeToolRouter always
+    # registers both, so this stays a fixed set here, but production's set
+    # tracks orchestrator/config.py's REMOTE_AGENTS instead of a hardcoded pair.
     expected_nodes = {
         "decide_tool",
         "run_default_tool",
@@ -31,9 +36,9 @@ def test_all_expected_nodes_are_present():
     assert expected_nodes.issubset(node_names)
 
 
-def test_mermaid_diagram_shows_the_conditional_branch():
+async def test_mermaid_diagram_shows_the_conditional_branch():
 
-    compiled_graph = _build_test_graph()
+    compiled_graph = await _build_test_graph()
     mermaid_text = compiled_graph.get_graph().draw_mermaid()
 
     # Every branch target should be reachable from decide_tool in the drawn
@@ -43,23 +48,19 @@ def test_mermaid_diagram_shows_the_conditional_branch():
         assert node_name in mermaid_text
 
 
-def test_rag_branch_is_wired_as_a_subgraph_with_its_own_internal_nodes():
+async def test_remote_tool_branches_are_plain_nodes_not_nested_subgraphs():
 
-    # run_rag_tool's action is a compiled subgraph now (see
-    # tools/ragTool/rag/graph.py), not a plain function -- xray=True surfaces its
-    # internal nodes namespaced as "run_rag_tool:<inner_node_name>", which a
-    # regression back to a plain function would no longer produce.
-    compiled_graph = _build_test_graph()
+    # Before the A2A rework, run_rag_tool/run_actions_tool were compiled
+    # LangGraph subgraphs registered directly as nodes, so xray=True surfaced
+    # their internal nodes namespaced as "run_rag_tool:<inner_node_name>".
+    # That's no longer true: the real subgraph work now happens on the other
+    # side of an A2A call (a separate process in production, a separate
+    # in-process ASGI app in tests -- see fake_dependencies.py), so from this
+    # graph's own perspective run_rag_tool/run_actions_tool are opaque async
+    # leaf nodes with nothing nested inside them. This asserts that shift
+    # rather than leaving a stale assumption from before the rework.
+    compiled_graph = await _build_test_graph()
     xray_node_names = set(compiled_graph.get_graph(xray=True).nodes.keys())
 
-    assert "run_rag_tool:fake_rag_run" in xray_node_names
-
-
-def test_actions_branch_is_wired_as_a_subgraph_with_its_own_internal_nodes():
-
-    # Same reasoning as the RAG xray test above, for
-    # tools/actionsTool/actions/graph.py's subgraph.
-    compiled_graph = _build_test_graph()
-    xray_node_names = set(compiled_graph.get_graph(xray=True).nodes.keys())
-
-    assert "run_actions_tool:fake_actions_run" in xray_node_names
+    assert not any(name.startswith("run_rag_tool:") for name in xray_node_names)
+    assert not any(name.startswith("run_actions_tool:") for name in xray_node_names)

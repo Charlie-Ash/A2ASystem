@@ -38,7 +38,9 @@ class ActionsTool():
         # ActionsTool no longer satisfies tools/base.py's Tool protocol (a
         # plain run(tool_args) -> ToolResult call). Its per-turn logic is now
         # a compiled LangGraph subgraph (see graph.py in this package),
-        # registered directly as the "run_actions_tool" node in the
-        # orchestrator's graph instead of being wrapped in a run() call --
-        # see orchestrator/graph.py and orchestrator/tool_router.py.
+        # invoked by this package's own standalone A2A server
+        # (a2a/a2a_server.py) -- the orchestrator no longer constructs
+        # ActionsTool or touches this subgraph directly at all; it reaches
+        # this agent only over the network, via
+        # orchestrator/agents/remote_agent.py.
         self.subgraph = build_actions_subgraph(self.llm, self.sampling_params)

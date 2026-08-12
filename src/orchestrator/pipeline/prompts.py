@@ -2,11 +2,35 @@
 from chat_history import history_to_chat_messages as _history_to_chat_messages
 
 
-def build_tool_decision_prompt(user_message, history_messages):
+def build_tool_decision_prompt(user_message, history_messages, tool_descriptions):
 
     # First stage prompt: Tool Route
     # JSON shape enforced by guided decoding (see schemas/tool_schema.py),
     # so this prompt only needs to cover tool semantics, not output formatting.
+    # tool_descriptions comes from ToolRouter.describe_tools_for_prompt() --
+    # a list of {"name", "description", "example_user_message"} dicts, one
+    # per available tool. "default"'s is hand-written (no AgentCard to pull
+    # from); every remote agent's comes straight from its own discovered
+    # AgentCard, so this prompt can't drift out of sync with what that agent
+    # actually advertises. args is always {} in every example now -- no tool
+    # reads tool_call.args anymore (remote agents just get the raw user
+    # message as A2A message text; "default" ignores its args entirely).
+    tools_block = "\n\n".join(
+        f"{i}. {tool['name']}\n{tool['description']}\nargs: {{}}"
+        for i, tool in enumerate(tool_descriptions, start=1)
+    )
+
+    examples_block = "\n\n".join(
+        f"""User: {tool['example_user_message']}
+        Output:
+        {{
+            "tool": "{tool['name']}",
+            "action": "run",
+            "args": {{}}
+        }}"""
+        for tool in tool_descriptions
+    )
+
     SYSTEM_PROMPT = f"""
         You are an orchestrator to a vast agent system.
         It is your role to decide on a suitble tool within the agent system to use in the user's work.
@@ -15,49 +39,13 @@ def build_tool_decision_prompt(user_message, history_messages):
         TOOLS AVAILABLE
         -----------------------
 
-        1. default
-        Use for general testing or unclear intent.
-        args: {{}}
-
-        2. rag
-        Use for document Q&A.
-        args: {{
-            "query": string
-        }}
-
-        3. actions
-        Use for saving/recording information the user asks you to remember.
-        args: {{}}
+        {tools_block}
 
         -----------------------
         EXAMPLES
         -----------------------
 
-        User: What is Pete's favorite subject?
-        Output:
-        {{
-            "tool": "rag",
-            "action": "run",
-            "args": {{
-                "query": "What is Pete's favorite subject?"
-                }}
-        }}
-
-        User: Remember Pete likes astronomy
-        Output:
-        {{
-            "tool": "actions",
-            "action": "run",
-            "args": {{}}
-        }}
-
-        User: hello
-        Output:
-        {{
-            "tool": "default",
-            "action": "run",
-            "args": {{}}
-        }}
+        {examples_block}
     """
 
     # Have the system prompt and user message split, avoiding using a single, excessivly long prompt that may cause unexpected behaviors.
@@ -123,6 +111,11 @@ def build_mem_update_prompt(user_message, tool_call, tool_result, final_response
 
     result_text = tool_result["output"]
 
+    # Known soft spot: this string comparison assumes the RAG agent is
+    # always configured under the name "rag" (orchestrator/config.py's
+    # REMOTE_AGENTS default). If an operator renames it there, this branch
+    # silently stops firing -- not fixed here, since the tool name is no
+    # longer a closed enum this file could validate against.
     if tool_call.tool == "rag":
         # RAG's raw answer is the ground truth for this turn -- prefer it over
         # final_response, which may have paraphrased or trimmed it. No more
