@@ -6,6 +6,7 @@
 # orchestrator_mem_update) and the "bye" save-to-file flow.
 import re
 import shutil
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -17,6 +18,17 @@ CHAT_LOG_DIR = AGENTSYSTEM_ROOT / "data" / "chat_log"
 CHAT_LOG_PATH = CHAT_LOG_DIR / "chat_log.md"
 
 EMPTY_CHAT_LOG_PLACEHOLDER = "(no chat log yet)"
+
+# Where the current session's thread_id is persisted, so a restarted
+# orchestrator process can resume the same LangGraph checkpointed state
+# (see orchestrator.py's AsyncSqliteSaver) instead of opening a fresh, empty
+# thread. Same data/-directory convention as CHAT_LOG_DIR above, computed
+# independently rather than importing orchestrator/config.py's
+# CHECKPOINT_DB_PATH -- if that env var is ever overridden to a different
+# directory, this file won't follow it; accepted as a minor drift risk for a
+# solo, short-timeline project rather than adding a cross-module import.
+CHECKPOINT_DIR = AGENTSYSTEM_ROOT / "data" / "checkpoints"
+THREAD_ID_PATH = CHECKPOINT_DIR / "thread_id.txt"
 
 # Anchors on the exact header append_entry() writes: "Summary to question N: \n"
 _ENTRY_HEADER_RE = re.compile(r"^Summary to question (\d+): *\n", re.MULTILINE)
@@ -69,6 +81,38 @@ def init_chat_log() -> None:
 
     if had_leftover:
         print("Note: discarded unsaved chat log left over from a previous session.")
+
+
+# Reads back a thread_id persisted by a previous, unclean (crashed/killed)
+# session, or creates and persists a fresh one -- called once at boot,
+# mirroring init_chat_log()'s reset-on-boot role for the markdown log.
+# Unlike that log, a leftover thread_id is *resumed*, not discarded: it's
+# what lets a restarted orchestrator process find its own prior checkpointed
+# conversation state again in the persistent AsyncSqliteSaver (see
+# orchestrator.py) instead of starting a new, empty thread.
+def load_or_create_thread_id() -> str:
+
+    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+
+    if THREAD_ID_PATH.exists():
+        existing = THREAD_ID_PATH.read_text(encoding="utf-8").strip()
+        if existing:
+            print(f"Note: resuming previous session's thread ({existing}) after an unclean exit.")
+            return existing
+
+    thread_id = str(uuid.uuid4())
+    THREAD_ID_PATH.write_text(thread_id, encoding="utf-8")
+    return thread_id
+
+
+# Deletes the persisted thread_id -- called on a clean "bye" exit (see
+# Orchestrator.end_session) so the *next* process boot starts a genuinely
+# new session/thread, rather than resuming a conversation the user already
+# ended on purpose.
+def clear_thread_id() -> None:
+
+    if THREAD_ID_PATH.exists():
+        THREAD_ID_PATH.unlink()
 
 
 # Returns every chat log entry written so far, as one string.

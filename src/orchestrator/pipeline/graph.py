@@ -102,7 +102,14 @@ def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter", checkpointer=
 
         async def run_remote_tool(state: OrchestratorState) -> dict:
             agent = tool_router.remote_agents[tool_name]
-            tool_result = await call_remote_agent(agent, state["user_message"])
+
+            # "messages" already includes this turn's just-appended
+            # HumanMessage (decide_tool's update was merged in before this
+            # node ran) -- drop it so history_messages keeps the same "turns
+            # before this one" contract as generate_response's own slicing;
+            # state["user_message"] is sent separately as the current turn.
+            history_messages = state["messages"][:-1]
+            tool_result = await call_remote_agent(agent, state["user_message"], history_messages)
             return {"tool_result": tool_result}
 
         return run_remote_tool

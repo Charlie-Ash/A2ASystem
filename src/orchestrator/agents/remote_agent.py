@@ -10,6 +10,7 @@ from a2a.client import A2ACardResolver, Client, ClientConfig, ClientFactory
 from a2a.client.helpers import create_text_message_object
 from a2a.types import AgentCard, Task, TaskState, TextPart
 
+from chat_history import history_to_chat_messages
 from orchestrator.config import RemoteAgentConfig
 from tools.base import ToolResult
 
@@ -79,9 +80,20 @@ def _extract_text(parts) -> str:
 # the call crossed a network boundary at all. Both RAG's and Actions'
 # servers advertise capabilities.streaming=False, so send_message() always
 # yields exactly one item: either a (Task, None) pair or a bare Message.
-async def call_remote_agent(agent: RemoteAgent, text: str) -> ToolResult:
+#
+# history_messages (turns before this one, same slice generate_response
+# already uses) is attached to the outgoing Message's free-form `metadata`
+# field when given -- explicit payload, not a shared Python object, so it
+# survives crossing a real process boundary. create_text_message_object only
+# accepts role/content, so metadata has to be set by mutating the returned
+# Message afterward. Every remote agent gets this regardless of whether it
+# actually reads it (RAGAgentExecutor doesn't, ActionsAgentExecutor does) --
+# call_remote_agent doesn't know or care which agent it's talking to.
+async def call_remote_agent(agent: RemoteAgent, text: str, history_messages: list | None = None) -> ToolResult:
 
     message = create_text_message_object(content=text)
+    if history_messages:
+        message.metadata = {"history": history_to_chat_messages(history_messages)}
 
     try:
         async for event in agent.client.send_message(message):

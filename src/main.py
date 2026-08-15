@@ -42,6 +42,10 @@ async def main():
                 else:
                     print("Invalid input. Please enter 'y' or 'n'.")
 
+            # Closes the persistent checkpointer's sqlite connection --
+            # AsyncSqliteSaver's own docs warn the graph can hang on exit if
+            # this isn't done (see Orchestrator.aclose()).
+            await orchestrator.aclose()
             break
 
         print(await orchestrator.run_orchestrator(input_text))

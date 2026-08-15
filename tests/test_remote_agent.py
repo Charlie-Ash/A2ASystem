@@ -8,15 +8,19 @@
 # more hand-fakes" approach as tests/test_rag_agent_executor.py.
 import httpx
 import pytest
+from langchain_core.messages import AIMessage, HumanMessage
 
 from orchestrator.config import RemoteAgentConfig
 from orchestrator.agents.remote_agent import call_remote_agent, discover_remote_agent
 
 from fake_dependencies import (
+    build_fake_actions_subgraph,
     build_fake_failing_subgraph,
     build_fake_rag_subgraph,
     build_fake_remote_agent,
 )
+from tools.actionsTool.a2a.a2a_server import build_agent_card as build_actions_agent_card
+from tools.actionsTool.a2a.agent_executor import ActionsAgentExecutor
 from tools.ragTool.a2a.a2a_server import build_agent_card as build_rag_agent_card
 from tools.ragTool.a2a.agent_executor import RAGAgentExecutor
 from tools.ragTool.rag.state import RAGSubgraphState
@@ -77,3 +81,47 @@ async def test_call_remote_agent_forces_relay_verbatim_false_when_the_agent_task
 
     assert tool_result["relay_verbatim"] is False
     assert "boom" in tool_result["output"]
+
+
+# The two tests below exercise call_remote_agent's history_messages param
+# against a real Actions-backed fake server specifically -- RAG's executor
+# never reads the metadata field these attach, so RAG can't tell the
+# difference; Actions' executor is what actually round-trips it back into
+# messages (see tools/actionsTool/a2a/agent_executor.py).
+async def test_call_remote_agent_attaches_history_metadata_when_history_is_given():
+
+    received_messages_sink = {"messages": None}
+    agent = await build_fake_remote_agent(
+        "actions",
+        ActionsAgentExecutor(build_fake_actions_subgraph(received_messages_sink=received_messages_sink)),
+        build_actions_agent_card,
+        relay_verbatim_on_success=False,
+    )
+
+    history = [HumanMessage(content="first message"), AIMessage(content="canned reply")]
+    await call_remote_agent(agent, "note down your previous answer", history)
+
+    received = received_messages_sink["messages"]
+    assert [(type(m).__name__, m.content) for m in received] == [
+        ("HumanMessage", "first message"),
+        ("AIMessage", "canned reply"),
+        ("HumanMessage", "note down your previous answer"),
+    ]
+
+
+async def test_call_remote_agent_omits_history_metadata_when_no_history_given():
+
+    received_messages_sink = {"messages": None}
+    agent = await build_fake_remote_agent(
+        "actions",
+        ActionsAgentExecutor(build_fake_actions_subgraph(received_messages_sink=received_messages_sink)),
+        build_actions_agent_card,
+        relay_verbatim_on_success=False,
+    )
+
+    await call_remote_agent(agent, "a message with no history", history_messages=None)
+
+    received = received_messages_sink["messages"]
+    assert [(type(m).__name__, m.content) for m in received] == [
+        ("HumanMessage", "a message with no history"),
+    ]

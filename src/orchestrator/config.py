@@ -4,6 +4,7 @@
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass
@@ -57,3 +58,19 @@ REMOTE_AGENTS = _parse_remote_agents(
     os.environ.get("REMOTE_AGENTS", _DEFAULT_REMOTE_AGENTS),
     os.environ.get("REMOTE_AGENTS_VERBATIM", _DEFAULT_REMOTE_AGENTS_VERBATIM),
 )
+
+
+# Where the persistent LangGraph checkpointer (AsyncSqliteSaver, see
+# orchestrator.py) writes conversation state, so it survives an orchestrator
+# process restart -- unlike the in-RAM MemorySaver it replaces. Same
+# data/-directory convention as memory_manager.py's CHAT_LOG_DIR, computed
+# independently here rather than imported from there (this module has no
+# other dependency on memory_manager.py, and both files already compute
+# their own AGENTSYSTEM_ROOT the same way).
+_CONFIG_DIR = Path(__file__).resolve().parent
+_AGENTSYSTEM_ROOT = _CONFIG_DIR.parent.parent
+
+CHECKPOINT_DB_PATH = Path(os.environ.get(
+    "CHECKPOINT_DB_PATH",
+    str(_AGENTSYSTEM_ROOT / "data" / "checkpoints" / "checkpoints.db"),
+))

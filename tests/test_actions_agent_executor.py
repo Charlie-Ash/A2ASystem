@@ -29,23 +29,27 @@ from tools.actionsTool.actions.state import ActionsSubgraphState
 from fake_dependencies import build_fake_actions_subgraph
 
 
-def _send_params(text: str) -> MessageSendParams:
+def _send_params(text: str, history: list[dict] | None = None) -> MessageSendParams:
 
     return MessageSendParams(
         message=Message(
             role=Role.user,
             parts=[Part(root=TextPart(text=text))],
             message_id=str(uuid.uuid4()),
+            metadata={"history": history} if history else None,
         )
     )
 
 
-def _build_handler(canned_output="actions-output", relay_verbatim=False, received_args_sink=None):
+def _build_handler(
+    canned_output="actions-output", relay_verbatim=False, received_args_sink=None, received_messages_sink=None
+):
 
     subgraph = build_fake_actions_subgraph(
         canned_output=canned_output,
         relay_verbatim=relay_verbatim,
         received_args_sink=received_args_sink,
+        received_messages_sink=received_messages_sink,
     )
     executor = ActionsAgentExecutor(subgraph)
     return DefaultRequestHandler(agent_executor=executor, task_store=InMemoryTaskStore())
@@ -69,6 +73,36 @@ async def test_message_send_passes_the_users_text_through_as_the_actions_request
     await handler.on_message_send(_send_params("remember Pete likes astronomy"))
 
     assert received_args_sink["args"] == {"request": "remember Pete likes astronomy"}
+
+
+async def test_message_send_passes_history_metadata_through_to_the_subgraph_as_messages():
+
+    received_messages_sink = {"messages": None}
+    handler = _build_handler(received_messages_sink=received_messages_sink)
+
+    history = [
+        {"role": "user", "content": "first message"},
+        {"role": "assistant", "content": "canned reply"},
+    ]
+    await handler.on_message_send(_send_params("note down your previous answer", history=history))
+
+    received = received_messages_sink["messages"]
+    assert [(type(m).__name__, m.content) for m in received] == [
+        ("HumanMessage", "first message"),
+        ("AIMessage", "canned reply"),
+        ("HumanMessage", "note down your previous answer"),
+    ]
+
+
+async def test_message_send_with_no_history_metadata_passes_only_the_current_turn():
+
+    received_messages_sink = {"messages": None}
+    handler = _build_handler(received_messages_sink=received_messages_sink)
+
+    await handler.on_message_send(_send_params("a message with no history"))
+
+    received = received_messages_sink["messages"]
+    assert [(type(m).__name__, m.content) for m in received] == [("HumanMessage", "a message with no history")]
 
 
 async def test_two_calls_are_independent_of_each_other():

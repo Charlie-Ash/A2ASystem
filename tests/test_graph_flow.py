@@ -85,16 +85,15 @@ async def test_actions_branch_always_receives_the_users_exact_message_as_request
     assert tool_router.actions_received_args["args"] == {"request": "remember Pete likes astronomy"}
 
 
-async def test_actions_branch_no_longer_receives_parent_chat_history():
-    # Known, documented limitation carried forward from the A2A rework (see
-    # PROJECT_NOTES.md / the plan this rework followed): once Actions is
-    # called over a real A2A boundary, there's no shared Python-level
-    # MemorySaver/state to inherit chat history from anymore -- the
-    # standalone agent executor invokes its subgraph with only {"tool_call":
-    # ...}, no "messages" key. Before the rework, ActionsSubgraphState's
-    # shared "messages" key let it see prior turns; that's regressed by
-    # design here, not accidentally -- this test documents the regression
-    # rather than leaving a stale assumption that it still works.
+async def test_actions_branch_receives_chat_history_over_a2a_metadata():
+    # Once Actions is called over a real A2A boundary, there's no shared
+    # Python-level MemorySaver/state to inherit chat history from directly --
+    # so instead the orchestrator attaches a slice of state["messages"] to
+    # the outgoing A2A message's metadata field explicitly (see
+    # orchestrator/agents/remote_agent.py's call_remote_agent), and
+    # ActionsAgentExecutor reconstructs it back into "messages" server-side
+    # (see tools/actionsTool/a2a/agent_executor.py). This is what makes "note
+    # down your previous answer" work again through the Actions agent.
     llm = FakeOrchestratorLLM(next_tool_call=ToolCall(tool="default", action="run", args={}))
     tool_router = await FakeToolRouter.create()
     graph = build_graph(llm, tool_router)
@@ -105,7 +104,12 @@ async def test_actions_branch_no_longer_receives_parent_chat_history():
     llm.next_tool_call = ToolCall(tool="actions", action="run", args={})
     await graph.ainvoke({"user_message": "note down your previous answer"}, config=config)
 
-    assert tool_router.actions_received_messages["messages"] == []
+    messages = tool_router.actions_received_messages["messages"]
+    assert [(type(m).__name__, m.content) for m in messages] == [
+        ("HumanMessage", "first message"),
+        ("AIMessage", "canned reply about default-output"),
+        ("HumanMessage", "note down your previous answer"),
+    ]
 
 
 async def test_conversation_history_persists_across_turns_with_same_thread_id():

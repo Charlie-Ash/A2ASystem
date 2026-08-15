@@ -8,23 +8,25 @@
 # standalone top-level graph (tools/actionsTool/a2a/a2a_server.py), so it has
 # no checkpointer/cross-call memory of its own.
 #
-# Known limitation, not solved yet: the orchestrator's own chat history
-# (its MemorySaver-backed OrchestratorState.messages) doesn't reach this
-# subgraph at all now that the call crosses a real network boundary -- a
-# networked call can't share a Python-level MemorySaver object across OS
-# processes the way an in-process nested subgraph node used to. This
-# subgraph's own "messages" field (see actions/state.py) is simply never
-# populated by this executor. Solving that means the orchestrator explicitly
-# passing whatever context is needed into the A2A task payload itself --
-# a separate, later task. RAG's standalone server never depended on chat
-# history in the first place, so it has no equivalent gap.
+# Cross-process chat history: the orchestrator's own MemorySaver-backed
+# OrchestratorState.messages can't be shared with this process directly (no
+# Python object crosses a real network boundary), so instead the orchestrator
+# attaches a recent slice of history to the incoming Message's `metadata`
+# field explicitly (see orchestrator/agents/remote_agent.py's
+# call_remote_agent). This executor reads that back and reconstructs it into
+# the subgraph's expected "messages" state key, current turn appended last --
+# same convention the orchestrator's own decide_tool uses. RAG's standalone
+# server never depended on chat history in the first place, so it has no
+# equivalent need.
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import Part, TextPart, UnsupportedOperationError
 from a2a.utils import new_agent_text_message, new_task
 from a2a.utils.errors import ServerError
+from langchain_core.messages import HumanMessage
 
+from chat_history import chat_messages_to_history
 from schemas.tool_call import ToolCall
 
 
@@ -55,8 +57,17 @@ class ActionsAgentExecutor(AgentExecutor):
 
         tool_call = ToolCall(tool="actions", action="run", args={"request": request})
 
+        # Reconstruct any history the orchestrator attached to this message
+        # (see module comment above); [] if none was sent (e.g. a direct
+        # A2A client with no conversation to relay, or the very first turn).
+        wire_history = (context.message.metadata or {}).get("history", []) if context.message else []
+        history_messages = chat_messages_to_history(wire_history)
+
         try:
-            result = await self.subgraph.ainvoke({"tool_call": tool_call})
+            result = await self.subgraph.ainvoke({
+                "tool_call": tool_call,
+                "messages": [*history_messages, HumanMessage(content=request)],
+            })
         except Exception as e:
             await updater.failed(
                 new_agent_text_message(f"Actions agent failed: {e}", task.context_id, task.id)

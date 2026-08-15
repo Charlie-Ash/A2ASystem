@@ -66,13 +66,14 @@ def build_actions_subgraph(llm: "LLM", sampling_params: "SamplingParams"):
 
     # Node: this agent's own LLM writes the note's content and file_name
     # from the raw request, using recent chat history (turns before this
-    # one -- state["messages"] would already include this turn's just-appended
+    # one -- state["messages"] already includes this turn's just-appended
     # HumanMessage, same convention orchestrator/pipeline/graph.py's
     # generate_response uses) so it can resolve references like "note down
-    # your previous answer". In practice, via this package's standalone A2A
-    # server, "messages" is never populated at all (see a2a/agent_executor.py's
-    # "known limitation" comment) -- this history-aware behavior only fires
-    # if something invokes this subgraph with real prior turns in state.
+    # your previous answer". Via this package's standalone A2A server,
+    # "messages" is reconstructed from history the orchestrator explicitly
+    # attached to the incoming A2A message (see a2a/agent_executor.py) --
+    # this node itself doesn't need to know or care where "messages" came
+    # from, in-process node or reconstructed-from-the-wire alike.
     def generate_content(state: ActionsSubgraphState) -> dict:
 
         history_messages = state.get("messages", [])[:-1]
