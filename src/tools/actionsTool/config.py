@@ -14,13 +14,15 @@ NOTES_DIR = AGENTSYSTEM_ROOT / "data" / "notes"
 
 # Small (1B) instruct model -- this agent's job (write a short note from a
 # user request, optionally using recent chat history) doesn't need anywhere
-# near the capacity RAG's or the orchestrator's models have, and there's very
-# little VRAM budget left to spend: on a 32 GiB card, the orchestrator's
-# gemma-4-E4B-it (0.6) and RAG's gemma-4-E2B-it-qat-w4a16-ct (0.3) already
-# commit 0.9 of the device when both load in the same process (main.py,
-# since RAG is still called in-process today). That leaves ~0.1 (~3.2 GiB)
-# for this engine -- enough for gemma-3-1b-it's ~2 GiB bf16 weights plus
-# headroom for KV cache/activations, but not much more.
+# near the capacity RAG's or the orchestrator's models have. This engine runs
+# in its own standalone A2A server process (see a2a/a2a_server.py); it is not
+# sharing a process with the orchestrator or RAG. In practice this project
+# runs Actions in its own serialized session (Actions + orchestrator only,
+# RAG's server stopped) rather than concurrently with both other engines --
+# see A2A_DIAGNOSIS.md, which found the default 0.1 (~3.2 GiB) too tight even
+# in complete isolation once fixed per-process overhead (CUDA context,
+# torch.compile cache, CUDA graphs) is accounted for, and
+# A2A_DIAGNOSIS_FIX_PLAN.md for the measured numbers and current default.
 LLM_MODEL = os.environ.get("ACTIONS_LLM_MODEL", "google/gemma-3-1b-it")
 GPU_MEMORY_UTILIZATION = float(os.environ.get("ACTIONS_GPU_MEMORY_UTILIZATION", "0.1"))
 # Note content generation is short -- no need for the 4096 the other two

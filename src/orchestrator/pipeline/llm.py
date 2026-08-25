@@ -10,6 +10,7 @@ from orchestrator.pipeline.prompts import (
 )
 from orchestrator import memory_manager
 from schemas.tool_call import ToolCall
+from tools.gpu_utils import check_gpu_memory
 
 class OrchestratorLLM():
 
@@ -20,13 +21,23 @@ class OrchestratorLLM():
     # since that set isn't known until ToolRouter.discover() has run.
     def __init__(self, tool_schema: dict):
 
-        # RAG tool's vLLM engine loads on the same GPU (see tools/ragTool/config.py),
-        # so this fraction must leave room for that model too instead of assuming
-        # the whole device is available. gemma-4-E4B-it's own weights alone take
-        # ~15.28 GiB (measured via vLLM's model-loading log), so this fraction must
-        # clear that bar before any KV cache/overhead is even considered -- on a
-        # 32 GiB card, 0.6 gives ~19.2 GiB (weights + ~4 GiB headroom).
+        # RAG and Actions each run in their own OS process now (standalone A2A
+        # servers), not sharing this process's memory space -- so this fraction
+        # is no longer budgeted against a single shared-process total. Each
+        # process (this one included) pays its own fixed CUDA/torch.compile/
+        # CUDA-graph overhead on top of its nominal fraction, so fractions must
+        # be tuned per run session against whatever's actually free (see
+        # A2A_DIAGNOSIS.md / A2A_DIAGNOSIS_FIX_PLAN.md for measured numbers and
+        # the serialized-session run procedure this project uses to fit three
+        # independent vLLM engines on one GPU). gemma-4-E4B-it's own weights
+        # alone take ~15.28 GiB (measured via vLLM's model-loading log), so this
+        # fraction must clear that bar before any KV cache/overhead is even
+        # considered -- on a 32 GiB card, 0.6 gives ~19.2 GiB (weights + ~4 GiB
+        # headroom), but expect to lower this (e.g. via
+        # ORCHESTRATOR_GPU_MEMORY_UTILIZATION=0.55) whenever another agent's
+        # process is already running and holding some of the card.
         gpu_memory_utilization = float(os.environ.get("ORCHESTRATOR_GPU_MEMORY_UTILIZATION", "0.6"))
+        check_gpu_memory(gpu_memory_utilization)
 
         self.llm = LLM(
             model="google/gemma-4-E4B-it",  # Gemma 4 E4B as the LLM brain of the orchestrator

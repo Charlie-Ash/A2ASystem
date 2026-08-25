@@ -21,9 +21,16 @@ EMBEDDING_MODEL = "BAAI/bge-m3"
 # different size class from the orchestrator's E4B-it model, so the two
 # can coexist on one GPU without competing for memory.
 LLM_MODEL = os.environ.get("RAG_LLM_MODEL", "google/gemma-4-E2B-it-qat-w4a16-ct")
-# Lowered to leave room for the orchestrator's larger gemma-4-E4B-it engine
-# (~15.28 GiB weights alone), which loads on the same GPU. On a 32 GiB card,
-# 0.3 gives ~9.6 GiB (this model's ~7.3 GiB weights + ~2.3 GiB headroom).
+# This engine runs in its own standalone A2A server process (see
+# a2a/a2a_server.py), not sharing a process with the orchestrator's larger
+# gemma-4-E4B-it engine -- so 0.3 is no longer budgeted against a shared
+# single-process total, it's this process's own fraction of the whole device.
+# On a 32 GiB card, 0.3 nominally gives ~9.6 GiB (this model's ~7.3 GiB
+# weights + ~2.3 GiB headroom), but measured steady-state usage as a separate
+# process runs higher once fixed per-process overhead (CUDA context,
+# torch.compile cache, CUDA graphs) is included -- see A2A_DIAGNOSIS.md for
+# the real numbers and the serialized-session run procedure (RAG + orchestrator
+# together; Actions started separately) this project uses to fit on one GPU.
 GPU_MEMORY_UTILIZATION = float(os.environ.get("RAG_GPU_MEMORY_UTILIZATION", "0.3"))
 MAX_MODEL_LEN = int(os.environ.get("RAG_MAX_MODEL_LEN", "4096"))
 
