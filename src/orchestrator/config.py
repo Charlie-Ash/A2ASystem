@@ -74,3 +74,13 @@ CHECKPOINT_DB_PATH = Path(os.environ.get(
     "CHECKPOINT_DB_PATH",
     str(_AGENTSYSTEM_ROOT / "data" / "checkpoints" / "checkpoints.db"),
 ))
+
+
+# How long the orchestrator's A2A client waits for a remote agent's response
+# before giving up and reporting an error ToolResult, instead of inheriting
+# httpx's stock 5-second default. A RAG/Actions turn does up to two
+# sequential LLM calls plus retrieval, and a freshly started agent server's
+# first real call has been observed taking ~128s (one-time chat-template
+# warm-up cost) -- both comfortably exceed 5s, which was silently truncating
+# real, in-progress calls into false timeout errors (see 2026-08-26 findings).
+REMOTE_AGENT_TIMEOUT_SECONDS = float(os.environ.get("REMOTE_AGENT_TIMEOUT_SECONDS", "180"))

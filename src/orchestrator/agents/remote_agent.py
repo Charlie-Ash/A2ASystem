@@ -11,7 +11,7 @@ from a2a.client.helpers import create_text_message_object
 from a2a.types import AgentCard, Task, TaskState, TextPart
 
 from chat_history import history_to_chat_messages
-from orchestrator.config import RemoteAgentConfig
+from orchestrator.config import REMOTE_AGENT_TIMEOUT_SECONDS, RemoteAgentConfig
 from tools.base import ToolResult
 
 logger = logging.getLogger(__name__)
@@ -51,13 +51,24 @@ async def discover_remote_agent(
             card = await resolver.get_agent_card()
             client = await ClientFactory.connect(card, client_config=ClientConfig(httpx_client=httpx_client))
         else:
-            async with httpx.AsyncClient() as resolver_client:
+            # Explicit, generous timeout on both clients below -- without
+            # this, ClientFactory.connect(card) (bare) and httpx.AsyncClient()
+            # (bare) each fall back to httpx's stock 5-second default, which
+            # is far too short for an LLM-backed agent call and was silently
+            # truncating real, in-progress calls into false timeout errors
+            # (see REMOTE_AGENT_TIMEOUT_SECONDS in orchestrator/config.py).
+            timeout = httpx.Timeout(REMOTE_AGENT_TIMEOUT_SECONDS)
+
+            async with httpx.AsyncClient(timeout=timeout) as resolver_client:
                 resolver = A2ACardResolver(resolver_client, cfg.url)
                 card = await resolver.get_agent_card()
 
             # Passing the already-resolved card (instead of the bare url) to
             # connect() skips re-fetching it -- one network round trip total.
-            client = await ClientFactory.connect(card)
+            # This client is long-lived (stored on RemoteAgent, reused for
+            # every call_remote_agent() call below), so it isn't closed here.
+            persistent_client = httpx.AsyncClient(timeout=timeout)
+            client = await ClientFactory.connect(card, client_config=ClientConfig(httpx_client=persistent_client))
 
     except Exception as e:
         logger.warning(f"Remote agent '{cfg.name}' unreachable at {cfg.url}: {e}")
