@@ -105,7 +105,7 @@ git clone https://github.com/Charlie-Ash/A2ASystem.git
 cd A2ASystem
 python -m venv venv
 venv\Scripts\activate          # Windows
-# source venv/bin/activate     # Linux/macOS
+# source venv/bin/activate     # Linux
 
 pip install -r requirements.txt
 
